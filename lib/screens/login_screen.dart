@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/supabase_service.dart';
+import '../widgets/location_autocomplete_field.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,7 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
   final _displayNameCtrl = TextEditingController();
-  final _homeCityCtrl = TextEditingController();
+  String _homeCity = ''; // set by autocomplete selection
 
   Future<void> _submit() async {
     setState(() {
@@ -31,7 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
           password: _passwordCtrl.text,
           username: _usernameCtrl.text.trim(),
           displayName: _displayNameCtrl.text.trim(),
-          homeCity: _homeCityCtrl.text.trim(),
+          homeCity: _homeCity,
         );
       } else {
         await SupabaseService.instance.signIn(
@@ -91,9 +92,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   decoration: const InputDecoration(labelText: 'Display name'),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _homeCityCtrl,
-                  decoration: const InputDecoration(labelText: 'Home city'),
+                LocationAutocompleteField(
+                  label: 'Home city',
+                  onSelected: (value) => setState(() => _homeCity = value),
                 ),
               ],
               const SizedBox(height: 24),
