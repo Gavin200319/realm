@@ -1,0 +1,30 @@
+workflows:
+  reality-merge-apk:
+    name: Reality Merge - Build APK
+    max_build_duration: 30
+    instance_type: linux_x2
+    environment:
+      flutter: stable
+      # Set these as "Environment variables" in the Codemagic app settings
+      # (mark them as secure). Group name used below: reality_merge_env
+      groups:
+        - reality_merge_env
+        # Expected variables inside that group:
+        #   SUPABASE_URL
+        #   SUPABASE_ANON_KEY
+        #   MAPBOX_ACCESS_TOKEN
+    scripts:
+      - name: Write .env from secure Codemagic variables
+        script: |
+          cat > .env << EOF
+          SUPABASE_URL=$SUPABASE_URL
+          SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+          MAPBOX_ACCESS_TOKEN=$MAPBOX_ACCESS_TOKEN
+          DEFAULT_UNLOCK_RADIUS_M=50
+          EOF
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Build debug APK
+        script: flutter build apk --debug
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
