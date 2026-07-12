@@ -1,0 +1,43 @@
+name: Build Android APK
+
+# Run whenever you push to main, or trigger manually from the Actions tab.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+
+      - name: Generate missing Android platform folder
+        run: flutter create --platforms=android --org com.realitymerge .
+
+      - name: Write .env from GitHub Secrets
+        run: |
+          cat > .env << EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          MAPBOX_ACCESS_TOKEN=${{ secrets.MAPBOX_ACCESS_TOKEN }}
+          DEFAULT_UNLOCK_RADIUS_M=50
+          EOF
+
+      - name: Get Flutter packages
+        run: flutter pub get
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: reality-merge-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk

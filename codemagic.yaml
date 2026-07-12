@@ -14,6 +14,12 @@ workflows:
         #   SUPABASE_ANON_KEY
         #   MAPBOX_ACCESS_TOKEN
     scripts:
+      - name: Generate missing Android platform folder
+        script: |
+          # This repo only ships lib/ + pubspec.yaml — no native android/
+          # folder. This regenerates just that scaffolding without
+          # touching any existing Dart code. Safe to run every build.
+          flutter create --platforms=android --org com.realitymerge .
       - name: Write .env from secure Codemagic variables
         script: |
           cat > .env << EOF
