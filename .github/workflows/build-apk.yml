@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch: {}
- 
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,7 +23,7 @@ jobs:
 
       - name: Generate missing Android platform folder
         run: flutter create --platforms=android --org com.realitymerge .
- 
+
       - name: Add permissions to AndroidManifest.xml
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
@@ -38,7 +38,7 @@ jobs:
         run: flutter pub get
 
       - name: Build debug APK
-        run: flutter build apk --debug
+        run: flutter build apk --debug --verbose 2>&1 | tail -100
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
