@@ -140,6 +140,8 @@ returns table (
   media_url text,
   unlock_radius_m integer,
   distance_m double precision,
+  drop_lat double precision,
+  drop_lng double precision,
   is_unlocked boolean,
   created_at timestamptz
 )
@@ -150,14 +152,14 @@ as $$
     d.id,
     d.creator_id,
     p.username as creator_username,
-    -- Hide caption/media for locked drops so the client never even
-    -- receives the content before the user is physically close enough.
     case when du.id is not null or d.creator_id = auth.uid()
       then d.caption else null end as caption,
     case when du.id is not null or d.creator_id = auth.uid()
       then d.media_url else null end as media_url,
     d.unlock_radius_m,
     st_distance(d.location, st_setsrid(st_makepoint(user_lng, user_lat), 4326)::geography) as distance_m,
+    st_y(d.location::geometry) as drop_lat,
+    st_x(d.location::geometry) as drop_lng,
     (du.id is not null) as is_unlocked,
     d.created_at
   from public.drops d
