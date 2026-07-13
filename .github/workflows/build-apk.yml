@@ -23,7 +23,7 @@ jobs:
 
       - name: Generate missing Android platform folder
         run: flutter create --platforms=android --org com.realitymerge .
-
+ 
       - name: Add permissions to AndroidManifest.xml
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
