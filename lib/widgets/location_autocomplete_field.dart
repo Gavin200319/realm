@@ -130,9 +130,8 @@ class _LocationAutocompleteFieldState
         '&format=json'
         '&addressdetails=1'
         '&limit=7'
-        '&countrycodes=ke'
         '&accept-language=en'
-        '&featuretype=settlement', // includes estates, suburbs, villages
+        '&featuretype=settlement',
       );
 
       final response = await http.get(uri, headers: {
