@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import '../models/drop.dart';
 import '../services/location_service.dart';
@@ -19,15 +18,14 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   MapboxMap? _mapboxMap;
-  Position? _position;
+  geo.Position? _position;
   List<Drop> _drops = [];
-  StreamSubscription<Position>? _positionSub;
+  StreamSubscription<geo.Position>? _positionSub;
   bool _ready = false;
 
   @override
   void initState() {
     super.initState();
-    // Set Mapbox token before map initializes
     MapboxOptions.setAccessToken(dotenv.env['MAPBOX_ACCESS_TOKEN']!);
     _initLocation();
   }
@@ -46,19 +44,18 @@ class _MapScreenState extends State<MapScreen> {
 
       _positionSub = LocationService.instance.watchPosition().listen((pos) {
         setState(() => _position = pos);
-        _updateUserIndicator(pos);
       });
     } catch (e) {
       debugPrint('Location error: $e');
     }
   }
 
-  Future<void> _loadDrops(Position position) async {
+  Future<void> _loadDrops(geo.Position position) async {
     try {
       final drops = await SupabaseService.instance.fetchNearbyDrops(
         lat: position.latitude,
         lng: position.longitude,
-        radiusM: 10000, // 10km radius on map
+        radiusM: 10000,
       );
       setState(() => _drops = drops);
       if (_mapboxMap != null && _ready) {
@@ -72,17 +69,14 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
 
-    // Disable irrelevant gestures
     await mapboxMap.gestures.updateSettings(
       GesturesSettings(rotateEnabled: false, pitchEnabled: false),
     );
 
-    // Hide Mapbox logo / attribution to keep UI clean (allowed for dev)
     await mapboxMap.logo.updateSettings(LogoSettings(enabled: false));
     await mapboxMap.attribution
         .updateSettings(AttributionSettings(enabled: false));
 
-    // Enable location puck (blue dot showing user position)
     await mapboxMap.location.updateSettings(LocationComponentSettings(
       enabled: true,
       pulsingEnabled: true,
@@ -90,11 +84,8 @@ class _MapScreenState extends State<MapScreen> {
     ));
 
     setState(() => _ready = true);
-
-    // Add drop pin source + layers
     await _setupDropLayers();
 
-    // If location was already fetched before map was ready, add pins now
     if (_position != null) {
       await _updateDropPins();
       await _flyToUser();
@@ -105,13 +96,11 @@ class _MapScreenState extends State<MapScreen> {
     final map = _mapboxMap;
     if (map == null) return;
 
-    // GeoJSON source for drops
     await map.style.addSource(GeoJsonSource(
       id: 'drops-source',
       data: json.encode(_buildGeoJson([])),
     ));
 
-    // Locked drops — grey circle
     await map.style.addLayer(CircleLayer(
       id: 'drops-locked',
       sourceId: 'drops-source',
@@ -122,7 +111,6 @@ class _MapScreenState extends State<MapScreen> {
       circleStrokeColor: 0xFFFFFFFF,
     ));
 
-    // Unlocked drops — purple circle
     await map.style.addLayer(CircleLayer(
       id: 'drops-unlocked',
       sourceId: 'drops-source',
@@ -133,7 +121,6 @@ class _MapScreenState extends State<MapScreen> {
       circleStrokeColor: 0xFFFFFFFF,
     ));
 
-    // Lock icon text on locked drops
     await map.style.addLayer(SymbolLayer(
       id: 'drops-locked-icon',
       sourceId: 'drops-source',
@@ -143,17 +130,15 @@ class _MapScreenState extends State<MapScreen> {
       textAllowOverlap: true,
     ));
 
-    // Register tap listener on drop circles
-    map.onMapTapListener = (MapContentGestureContext context) async {
-      await _handleMapTap(context);
-    };
+    // Register tap listener
+    map.onMapTapListener = _handleMapTap;
   }
 
-  Future<void> _handleMapTap(MapContentGestureContext context) async {
+  void _handleMapTap(MapContentGestureContext context) async {
     final map = _mapboxMap;
-    if (map == null || _position == null) return;
+    final pos = _position;
+    if (map == null || pos == null) return;
 
-    // Query features near tap point
     final features = await map.queryRenderedFeatures(
       RenderedQueryGeometry.fromScreenCoordinate(context.touchPosition),
       RenderedQueryOptions(layerIds: ['drops-locked', 'drops-unlocked']),
@@ -161,34 +146,37 @@ class _MapScreenState extends State<MapScreen> {
 
     if (features.isEmpty) return;
 
-    final props = features.first?.queriedFeature.feature['properties'];
-    if (props == null) return;
+    // properties is Object? — cast safely to Map
+    final rawProps = features.first?.queriedFeature.feature['properties'];
+    if (rawProps == null) return;
+    final props = rawProps as Map<Object?, Object?>;
 
-    final dropId = props['id'] as String?;
+    final dropId = props['id']?.toString();
     if (dropId == null) return;
 
-    final drop = _drops.firstWhere(
-      (d) => d.id == dropId,
-      orElse: () => throw Exception('Drop not found'),
-    );
+    Drop? drop;
+    try {
+      drop = _drops.firstWhere((d) => d.id == dropId);
+    } catch (_) {
+      return;
+    }
 
     if (!mounted) return;
-    await Navigator.of(context.context ?? this.context).push(
+    await Navigator.of(this.context).push(
       MaterialPageRoute(
         builder: (_) => DropDetailScreen(
-          drop: drop,
-          currentLat: _position!.latitude,
-          currentLng: _position!.longitude,
+          drop: drop!,
+          currentLat: pos.latitude,
+          currentLng: pos.longitude,
         ),
       ),
     );
-    await _loadDrops(_position!);
+    await _loadDrops(pos);
   }
 
   Future<void> _updateDropPins() async {
     final map = _mapboxMap;
     if (map == null || !_ready) return;
-
     try {
       await map.style.setStyleSourceProperty(
         'drops-source',
@@ -238,13 +226,9 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Future<void> _updateUserIndicator(Position pos) async {
-    // Location puck updates automatically via the location component
-    // No manual update needed
-  }
-
   @override
   Widget build(BuildContext context) {
+    final pos = _position;
     return Scaffold(
       body: Stack(
         children: [
@@ -253,20 +237,18 @@ class _MapScreenState extends State<MapScreen> {
             cameraOptions: CameraOptions(
               center: Point(
                 coordinates: Position(
-                  _position?.longitude ?? 36.8219, // Nairobi default
-                  _position?.latitude ?? -1.2921,
+                  pos?.longitude ?? 36.8219,
+                  pos?.latitude ?? -1.2921,
                 ),
               ),
               zoom: 14.0,
             ),
           ),
-          // Drop count badge
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,
             left: 16,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: Colors.black87,
                 borderRadius: BorderRadius.circular(20),
@@ -277,7 +259,6 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
           ),
-          // Re-center button
           Positioned(
             bottom: 100,
             right: 16,
