@@ -12,6 +12,11 @@ Future<void> main() async {
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
 
+  // Firebase / push notifications are initialized lazily in
+  // NotificationService.initialize() — call that after Firebase is
+  // set up in your project. Skipped here until google-services.json
+  // is added (see notification_service.dart for setup steps).
+
   runApp(const RealityMergeApp());
 }
 
