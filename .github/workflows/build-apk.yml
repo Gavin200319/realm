@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -25,26 +29,16 @@ jobs:
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i 's|<application|<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <application|' "$MANIFEST"
 
-      - name: Write .env from GitHub Secrets
+      - name: Write .env file
         run: |
-          cat > .env << EOF
-          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-          MAPBOX_ACCESS_TOKEN=${{ secrets.MAPBOX_ACCESS_TOKEN }}
-          DEFAULT_UNLOCK_RADIUS_M=50
-          EOF
+          printf 'SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nMAPBOX_ACCESS_TOKEN=%s\nDEFAULT_UNLOCK_RADIUS_M=50\n' \
+            "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$MAPBOX_ACCESS_TOKEN" > .env
 
       - name: Get Flutter packages
         run: flutter pub get
 
       - name: Build debug APK
         run: flutter build apk --debug
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: reality-merge-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk        run: flutter build apk --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
