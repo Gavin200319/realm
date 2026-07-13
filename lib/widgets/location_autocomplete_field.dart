@@ -18,27 +18,43 @@ class PlaceResult {
   factory PlaceResult.fromNominatim(Map<String, dynamic> json) {
     final address = json['address'] as Map<String, dynamic>? ?? {};
 
-    // Pull the most specific place name available
+    // Most specific name first
     final city = address['city']
         ?? address['town']
+        ?? address['municipality']
         ?? address['village']
         ?? address['suburb']
-        ?? address['county']
+        ?? address['neighbourhood']
         ?? '';
 
-    final county = address['county'] ?? address['state_district'] ?? '';
-    final country = address['country'] ?? '';
+    final subcounty = address['suburb']
+        ?? address['neighbourhood']
+        ?? address['quarter']
+        ?? '';
 
-    // Build the two display lines
-    final line1 = city.isNotEmpty ? city : (json['display_name'] as String).split(',').first.trim();
+    final county = address['county']
+        ?? address['state_district']
+        ?? address['state']
+        ?? '';
 
-    final parts = <String>[];
-    if (county.isNotEmpty && county != line1) parts.add(county);
-    if (country.isNotEmpty) parts.add(country);
-    final line2 = parts.join(', ');
+    final country = address['country'] ?? 'Kenya';
 
-    // Full stored value: "Nairobi, Nairobi County, Kenya"
-    final allParts = <String>[if (line1.isNotEmpty) line1, ...parts];
+    // Line 1: the city/town name — what the user typed
+    final line1 = city.isNotEmpty
+        ? city
+        : (json['display_name'] as String).split(',').first.trim();
+
+    // Line 2: subcounty (if different from line1), county, country
+    final line2parts = <String>[];
+    if (subcounty.isNotEmpty && subcounty != line1) line2parts.add(subcounty);
+    if (county.isNotEmpty && county != line1) line2parts.add(county);
+    if (country.isNotEmpty) line2parts.add(country);
+    final line2 = line2parts.join(', ');
+
+    // Full stored value e.g. "Kisumu, Kisumu County, Kenya"
+    final allParts = <String>[line1];
+    if (county.isNotEmpty && county != line1) allParts.add(county);
+    if (country.isNotEmpty) allParts.add(country);
     final full = allParts.join(', ');
 
     return PlaceResult(
@@ -113,7 +129,10 @@ class _LocationAutocompleteFieldState
         '?q=${Uri.encodeComponent(query)}'
         '&format=json'
         '&addressdetails=1'
-        '&limit=5',
+        '&limit=7'
+        '&countrycodes=ke'
+        '&accept-language=en'
+        '&featuretype=settlement', // includes estates, suburbs, villages
       );
 
       final response = await http.get(uri, headers: {
