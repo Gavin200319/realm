@@ -121,69 +121,76 @@ class _ARScreenState extends State<ARScreen> with TickerProviderStateMixin {
   // ── ARCore callbacks ─────────────────────────────────────────────────────
 
   void _onARViewCreated(
-    ARSessionManager sessionManager,
-    ARObjectManager objectManager,
-    ARAnchorManager anchorManager,
-    ARLocationManager locationManager,
-  ) {
-    _sessionManager = sessionManager;
-    _objectManager = objectManager;
-    _anchorManager = anchorManager;
+  ARSessionManager sessionManager,
+  ARObjectManager objectManager,
+  ARAnchorManager anchorManager,
+  ARLocationManager locationManager,
+) {
+  _sessionManager = sessionManager;
+  _objectManager = objectManager;
+  _anchorManager = anchorManager;
 
-    sessionManager.onInitialize(
-      showAnimatedGuide: false,
-      showFeaturePoints: true,
-      showPlanes: true,
-      customPlaneTexturePath: null,
-      showWorldOrigin: false,
-      handlePans: false,
-      handleRotation: false,
-    );
+  sessionManager.onInitialize(
+    showAnimatedGuide: false,
+    showFeaturePoints: true,
+    showPlanes: true,
+    customPlaneTexturePath: null,
+    showWorldOrigin: false,
+    handlePans: false,
+    handleRotation: false,
+  );
 
-    objectManager.onInitialize();
+  objectManager.onInitialize();
 
-    sessionManager.onPlaneOrPointTap = _onPlaneTap;
+  sessionManager.onPlaneOrPointTap = _onPlaneTap;
 
-    setState(() => _arReady = true);
+  setState(() => _arReady = true);
+  }
+Future<void> _onPlaneTap(List<ARHitTestResult> hits) async {
+  if (!_placingMode || _dropToPlace == null) {
+    setState(() {
+      _planeDetected = true;
+      _statusMessage = 'Surface detected! Select a drop to place.';
+    });
+    return;
   }
 
-  Future<void> _onPlaneTap(List<ARHitTestResult> hits) async {
-    if (!_placingMode || _dropToPlace == null) {
-      // Not in place mode — show status
-      setState(() {
-        _planeDetected = true;
-        _statusMessage = 'Surface detected! Select a drop to place.';
-      });
-      return;
-    }
+  final hit = hits.firstWhere(
+    (h) => h.type == ARHitTestResultType.plane,
+    orElse: () => hits.first,
+  );
 
-    // Place the selected drop as an AR node
-    final hit = hits.firstWhere(
-      (h) => h.type == ARHitTestResultType.plane,
-      orElse: () => hits.first,
-    );
+  final anchor = ARPlaneAnchor(
+    transformation: hit.worldTransform,
+  );
 
-    final anchor = ARPlaneAnchor(transformation: hit.worldTransform);
-    final didAdd = await arObjectManager?.addNode(node) ?? false;
-if (!didAdd) return;
-    // Create a glowing box node
-    final node = ARNode(
-      type: NodeType.webGLB,
-      uri: 'https://github.com/KhronosGroup/glTF-Sample-Models/raw/master/2.0/Box/glTF-Binary/Box.glb',
-      scale: vm.Vector3(0.15, 0.15, 0.15),
-      position: vm.Vector3(0, 0, 0),
-      rotation: vm.Vector4(0, 0, 0, 0),
-    );
+  final didAddAnchor = await _anchorManager?.addAnchor(anchor) ?? false;
 
-    final didAddNode = await _objectManager!.addNode(node, planeAnchor: anchor);
-   if (didAddNode ?? false) {
-      _anchors[_dropToPlace!.id] = anchor;
-      setState(() {
-        _placingMode = false;
-        _statusMessage = 'Drop placed in AR space!';
-        _dropToPlace = null;
-      });
-    }
+  if (!didAddAnchor) return;
+
+  final node = ARNode(
+    type: NodeType.webGLB,
+    uri:
+        'https://github.com/KhronosGroup/glTF-Sample-Models/raw/master/2.0/Box/glTF-Binary/Box.glb',
+    scale: vm.Vector3(0.15, 0.15, 0.15),
+    position: vm.Vector3.zero(),
+    rotation: vm.Vector4(0, 0, 0, 1),
+  );
+
+  final didAddNode =
+      await _objectManager?.addNode(node, planeAnchor: anchor) ?? false;
+
+  if (!didAddNode) return;
+
+  _anchors[_dropToPlace!.id] = anchor;
+
+  setState(() {
+    _placingMode = false;
+    _dropToPlace = null;
+    _statusMessage = 'Drop placed in AR space!';
+  });
+}
+  
   }
 
   // ── Compass overlay helpers ───────────────────────────────────────────────
