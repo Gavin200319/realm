@@ -19,20 +19,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: "17"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: "3.24.5"
 
-      - name: Flutter version
-        run: flutter --version
+      - name: Enable Android
+        run: flutter config --enable-android
 
       - name: Generate Android project if missing
         run: |
@@ -48,14 +47,14 @@ jobs:
           MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}
           EOF
 
-      - name: Install dependencies
+      - name: Get packages
         run: flutter pub get
 
-      - name: Build Debug APK
+      - name: Build APK
         run: flutter build apk --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: reality-merge-debug-apk
+          name: realm-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
