@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/rm_theme.dart';
 import 'feed_screen.dart';
 import 'map_screen.dart';
+import 'ar_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -13,13 +14,18 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _currentIndex = 0;
 
-  final _screens = const [FeedScreen(), MapScreen()];
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: RMColors.background,
-      body: IndexedStack(index: _currentIndex, children: _screens),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: const [
+          FeedScreen(),
+          MapScreen(),
+          ARScreen(),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           border: Border(top: BorderSide(color: RMColors.border, width: 1)),
@@ -40,6 +46,11 @@ class _HomeShellState extends State<HomeShell> {
               icon: Icon(Icons.map_outlined, color: RMColors.textSecondary),
               selectedIcon: Icon(Icons.map_rounded, color: RMColors.primary),
               label: 'Map',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.view_in_ar_outlined, color: RMColors.textSecondary),
+              selectedIcon: Icon(Icons.view_in_ar_rounded, color: RMColors.primary),
+              label: 'AR',
             ),
           ],
         ),

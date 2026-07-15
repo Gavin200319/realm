@@ -1,28 +1,37 @@
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class LocationService {
   LocationService._();
   static final LocationService instance = LocationService._();
 
+  /// Requests permission explicitly via permission_handler,
+  /// then gets a fresh GPS fix. Never returns a stale location.
   Future<Position> getCurrentPosition() async {
+    // Step 1 — check if location services are on
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      throw Exception('Location services are disabled on this device.');
+      throw Exception(
+          'Location services are off. Enable them in device Settings.');
     }
 
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        throw Exception('Location permission denied.');
-      }
+    // Step 2 — request permission via permission_handler
+    // (more reliable than geolocator's built-in request on some Android versions)
+    var status = await Permission.locationWhenInUse.status;
+    if (status.isDenied) {
+      status = await Permission.locationWhenInUse.request();
+    }
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+      throw Exception(
+          'Location permission permanently denied. Enabled it in Settings.');
+    }
+    if (!status.isGranted) {
+      throw Exception('Location permission denied.');
     }
 
-    if (permission == LocationPermission.deniedForever) {
-      throw Exception('Location permission permanently denied — enable it in Settings.');
-    }
-
+    // Step 3 — get fresh fix with timeout fallback
     try {
       return await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.bestForNavigation,
@@ -44,7 +53,7 @@ class LocationService {
         distanceFilter: 5,
         intervalDuration: const Duration(seconds: 3),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationText: 'Reality Merge is tracking your location',
+          notificationText: 'Reality Merge is using your location',
           notificationTitle: 'Reality Merge',
           enableWakeLock: true,
         ),

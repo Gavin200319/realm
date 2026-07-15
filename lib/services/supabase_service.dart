@@ -239,3 +239,22 @@ class SupabaseService {
     return ProfileStats.fromMap(row);
   }
 }
+
+  Future<void> updateProfile({
+    required String userId,
+    String? displayName,
+    String? homeCity,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (displayName != null) updates['display_name'] = displayName;
+    if (homeCity != null) updates['home_city'] = homeCity;
+    if (updates.isEmpty) return;
+    await _client.from('profiles').update(updates).eq('id', userId);
+  }
+
+  Future<void> deleteAccount() async {
+    final user = currentUser;
+    if (user == null) return;
+    await _client.from('profiles').delete().eq('id', user.id);
+    await signOut();
+  }
