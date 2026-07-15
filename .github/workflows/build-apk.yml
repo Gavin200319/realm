@@ -26,7 +26,13 @@ jobs:
           channel: 'stable'
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get Flutter dependencies
+      - name: Migrate to Android v2 embedding
+        run: |
+          flutter pub get
+          flutter pub run flutter_lints --version 2>/dev/null || true
+          grep -r "v1" android/app/src/main/AndroidManifest.xml && sed -i 's/android:usesCleartextTraffic="true"/android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml || true
+
+      - name: Update GeneratedPluginRegistrant
         run: flutter pub get
 
       - name: Configure Mapbox token
