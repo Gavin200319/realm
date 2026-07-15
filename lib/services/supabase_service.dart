@@ -238,7 +238,6 @@ class SupabaseService {
     if (row == null) return null;
     return ProfileStats.fromMap(row);
   }
-}
 
   Future<void> updateProfile({
     required String userId,
@@ -258,3 +257,7 @@ class SupabaseService {
     await _client.from('profiles').delete().eq('id', user.id);
     await signOut();
   }
+
+}
+
+  
