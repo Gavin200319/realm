@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/auth_gate.dart';
+import 'services/device_capability_service.dart';
 import 'theme/rm_theme.dart';
 
 Future<void> main() async {
@@ -18,6 +19,8 @@ Future<void> main() async {
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
+
+  await DeviceCapabilityService.instance.init();
 
   runApp(const RealityMergeApp());
 }

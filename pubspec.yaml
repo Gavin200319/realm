@@ -25,6 +25,7 @@ dependencies:
   vector_math: ^2.1.4
   permission_handler: ^11.3.1
   sensors_plus: ^5.0.1
+  device_info_plus: ^11.5.0
 
 dev_dependencies:
   flutter_test:

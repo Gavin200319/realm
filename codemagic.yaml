@@ -20,6 +20,23 @@ workflows:
           # folder. This regenerates just that scaffolding without
           # touching any existing Dart code. Safe to run every build.
           flutter create --platforms=android --org com.realitymerge .
+      - name: Allow ar_flutter_plugin_2 below its declared minSdk
+        script: |
+          # ar_flutter_plugin_2's Android library declares minSdk 28. We keep
+          # the app's own minSdk lower and override the manifest merge check
+          # here — safe only because DeviceCapabilityService (checked in
+          # HomeShell) never builds ARScreen on a device below API 28, so
+          # the plugin's native code is never invoked on an unsupported
+          # device.
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            if ! grep -q 'xmlns:tools' "$MANIFEST"; then
+              sed -i 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android"|<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"|' "$MANIFEST"
+            fi
+            if ! grep -q 'overrideLibrary' "$MANIFEST"; then
+              sed -i 's|<application|<uses-sdk tools:overrideLibrary="com.uhg0.ar_flutter_plugin_2" />\n    <application|' "$MANIFEST"
+            fi
+          fi
       - name: Write .env from secure Codemagic variables
         script: |
           cat > .env << EOF
