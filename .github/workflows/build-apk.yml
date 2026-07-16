@@ -4,16 +4,12 @@ on:
   push:
     branches:
       - main
+      - master
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-      MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -28,25 +24,24 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: "3.35.2"
+          cache: true
 
-      - name: Enable Android
-        run: flutter config --enable-android
+      - name: Accept Android Licenses
+        run: yes | flutter doctor --android-licenses
 
-      - name: Install Android SDK 36
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Flutter Doctor
+        run: flutter doctor -v
 
       - name: Create .env
         run: |
           cat > .env <<EOF
-          SUPABASE_URL=${SUPABASE_URL}
-          SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-          MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          MAPBOX_ACCESS_TOKEN=${{ secrets.MAPBOX_ACCESS_TOKEN }}
           EOF
 
-      - name: Get packages
+      - name: Install dependencies
         run: flutter pub get
 
       - name: Build APK
@@ -55,5 +50,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: realm-debug-apk
+          name: RealityMerge-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
