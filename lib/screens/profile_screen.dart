@@ -272,7 +272,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ClipRRect(
           borderRadius: BorderRadius.circular(6),
           child: LinearProgressIndicator(
-            value: progress.clamp(0.0, 1.0),
+            value: progress.clamp(0.0, 1.0).toDouble(),
             minHeight: 8,
             backgroundColor: RMColors.surfaceAlt,
             valueColor:

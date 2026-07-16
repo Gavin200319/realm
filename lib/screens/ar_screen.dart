@@ -121,76 +121,70 @@ class _ARScreenState extends State<ARScreen> with TickerProviderStateMixin {
   // ── ARCore callbacks ─────────────────────────────────────────────────────
 
   void _onARViewCreated(
-  ARSessionManager sessionManager,
-  ARObjectManager objectManager,
-  ARAnchorManager anchorManager,
-  ARLocationManager locationManager,
-) {
-  _sessionManager = sessionManager;
-  _objectManager = objectManager;
-  _anchorManager = anchorManager;
+    ARSessionManager sessionManager,
+    ARObjectManager objectManager,
+    ARAnchorManager anchorManager,
+    ARLocationManager locationManager,
+  ) {
+    _sessionManager = sessionManager;
+    _objectManager = objectManager;
+    _anchorManager = anchorManager;
 
-  sessionManager.onInitialize(
-    showAnimatedGuide: false,
-    showFeaturePoints: true,
-    showPlanes: true,
-    customPlaneTexturePath: null,
-    showWorldOrigin: false,
-    handlePans: false,
-    handleRotation: false,
-  );
+    sessionManager.onInitialize(
+      showAnimatedGuide: false,
+      showFeaturePoints: true,
+      showPlanes: true,
+      customPlaneTexturePath: null,
+      showWorldOrigin: false,
+      handlePans: false,
+      handleRotation: false,
+    );
 
-  objectManager.onInitialize();
+    objectManager.onInitialize();
 
-  sessionManager.onPlaneOrPointTap = _onPlaneTap;
+    sessionManager.onPlaneOrPointTap = _onPlaneTap;
 
-  setState(() => _arReady = true);
-  }
-Future<void> _onPlaneTap(List<ARHitTestResult> hits) async {
-  if (!_placingMode || _dropToPlace == null) {
-    setState(() {
-      _planeDetected = true;
-      _statusMessage = 'Surface detected! Select a drop to place.';
-    });
-    return;
+    setState(() => _arReady = true);
   }
 
-  final hit = hits.firstWhere(
-    (h) => h.type == ARHitTestResultType.plane,
-    orElse: () => hits.first,
-  );
+  Future<void> _onPlaneTap(List<ARHitTestResult> hits) async {
+    if (!_placingMode || _dropToPlace == null) {
+      // Not in place mode — show status
+      setState(() {
+        _planeDetected = true;
+        _statusMessage = 'Surface detected! Select a drop to place.';
+      });
+      return;
+    }
 
-  final anchor = ARPlaneAnchor(
-    transformation: hit.worldTransform,
-  );
+    // Place the selected drop as an AR node
+    final hit = hits.firstWhere(
+      (h) => h.type == ARHitTestResultType.plane,
+      orElse: () => hits.first,
+    );
 
-  final didAddAnchor = await _anchorManager?.addAnchor(anchor) ?? false;
+    final anchor = ARPlaneAnchor(transformation: hit.worldTransform);
+    final didAdd = await _anchorManager!.addAnchor(anchor);
+    if (didAdd != true) return;
 
-  if (!didAddAnchor) return;
+    // Create a glowing box node
+    final node = ARNode(
+      type: NodeType.webGLB,
+      uri: 'https://github.com/KhronosGroup/glTF-Sample-Models/raw/master/2.0/Box/glTF-Binary/Box.glb',
+      scale: vm.Vector3(0.15, 0.15, 0.15),
+      position: vm.Vector3(0, 0, 0),
+      rotation: vm.Vector4(0, 0, 0, 0),
+    );
 
-  final node = ARNode(
-    type: NodeType.webGLB,
-    uri:
-        'https://github.com/KhronosGroup/glTF-Sample-Models/raw/master/2.0/Box/glTF-Binary/Box.glb',
-    scale: vm.Vector3(0.15, 0.15, 0.15),
-    position: vm.Vector3.zero(),
-    rotation: vm.Vector4(0, 0, 0, 1),
-  );
-
-  final didAddNode =
-      await _objectManager?.addNode(node, planeAnchor: anchor) ?? false;
-
-  if (!didAddNode) return;
-
-  _anchors[_dropToPlace!.id] = anchor;
-
-  setState(() {
-    _placingMode = false;
-    _dropToPlace = null;
-    _statusMessage = 'Drop placed in AR space!';
-  });
-}
-  
+    final didAddNode = await _objectManager!.addNode(node, planeAnchor: anchor);
+    if (didAddNode == true) {
+      _anchors[_dropToPlace!.id] = anchor;
+      setState(() {
+        _placingMode = false;
+        _statusMessage = 'Drop placed in AR space!';
+        _dropToPlace = null;
+      });
+    }
   }
 
   // ── Compass overlay helpers ───────────────────────────────────────────────
@@ -371,7 +365,7 @@ Future<void> _onPlaneTap(List<ARHitTestResult> hits) async {
 
     final x = size.width / 2 + (rel / 60) * (size.width / 2.5);
     final y = size.height * 0.4 -
-        (1 - drop.distanceM / 200).clamp(0, 1) * size.height * 0.15;
+        (1 - drop.distanceM / 200).clamp(0, 1).toDouble() * size.height * 0.15;
 
     return Positioned(
       left: x - 40,

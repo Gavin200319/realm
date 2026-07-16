@@ -257,7 +257,4 @@ class SupabaseService {
     await _client.from('profiles').delete().eq('id', user.id);
     await signOut();
   }
-
 }
-
-  

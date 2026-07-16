@@ -1,11 +1,10 @@
-import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:http/http.dart' as http;
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart'hide Size;
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import '../models/drop.dart';
 import '../services/location_service.dart';
 import '../services/onboarding_service.dart';
@@ -653,9 +652,7 @@ class _DropSheet extends StatelessWidget {
                   icon: const Icon(Icons.open_in_new_rounded, size: 16),
                   label: const Text('Open drop'),
                   style: FilledButton.styleFrom(
-                  minimumSize: const        MaterialStatePropertyAll<Size>(
-     Size(double.infinity, 46),
-),
+                    minimumSize: const Size(0, 46),
                   ),
                 ),
               ),
@@ -673,9 +670,7 @@ class _DropSheet extends StatelessWidget {
                       : const Icon(Icons.alt_route_rounded, size: 16),
                   label: const Text('Route'),
                   style: OutlinedButton.styleFrom(
-                    minimumSize: const MaterialStatePropertyAll<Size>(
-  Size(double.infinity, 46),
-),
+                    minimumSize: const Size(0, 46),
                   ),
                 ),
               ),
