@@ -95,11 +95,15 @@ create table public.drop_interactions (
     (type = 'comment' and content is not null and char_length(content) <= 500)
     or (type = 'like' and content is null)
   ),
-  created_at timestamptz not null default now(),
-  unique (user_id, drop_id, type) -- a user can only like a drop once;
-                                   -- comments should NOT reuse this unique
-                                   -- constraint in a real build (see note below)
+  created_at timestamptz not null default now()
 );
+
+-- A user can only like a drop once — enforced with a partial unique
+-- index scoped to type = 'like' so it never limits how many comments
+-- a user can leave on the same drop.
+create unique index drop_interactions_one_like_per_user
+  on public.drop_interactions (user_id, drop_id)
+  where (type = 'like');
 
 create index drop_interactions_drop_idx on public.drop_interactions (drop_id);
 
@@ -116,12 +120,6 @@ create policy "Users can create their own interactions"
 create policy "Users can delete their own interactions"
   on public.drop_interactions for delete
   using (auth.uid() = user_id);
-
--- NOTE: the unique(user_id, drop_id, type) constraint above will also
--- block a user from leaving more than one comment on the same drop.
--- For v1 that's an acceptable simplification. If you want unlimited
--- comments per user, drop that unique constraint before going to
--- production and instead just enforce it in application code for likes.
 
 -- 6. RPC: nearby drops ------------------------------------------------------
 -- The core "what's near me" query. Returns drops within radius_m of a

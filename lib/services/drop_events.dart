@@ -1,11 +1,9 @@
 import 'dart:async';
 
-/// HomeShell keeps Explore/Map/AR alive in an IndexedStack, so a screen
-/// that already fetched its drops once (e.g. ARScreen in initState) has
-/// no natural signal to refetch when a new drop is created from a
-/// different screen. This is a minimal broadcast bus for that one
-/// notification — screens that care subscribe in initState and refetch
-/// when it fires.
+/// A minimal broadcast bus for "a drop was just created" — any screen
+/// that fetched its own drops once (and isn't already refetching after
+/// its own create flow) can subscribe in initState and refetch when it
+/// fires.
 class DropEvents {
   DropEvents._();
   static final DropEvents instance = DropEvents._();

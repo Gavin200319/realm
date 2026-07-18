@@ -35,7 +35,7 @@ class LocationService {
     try {
       return await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.bestForNavigation,
-        timeLimit: const Duration(seconds: 10),
+        timeLimit: Duration(seconds: 10),
       );
     } on TimeoutException {
       final last = await Geolocator.getLastKnownPosition();
@@ -51,8 +51,8 @@ class LocationService {
       locationSettings: AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 5,
-        intervalDuration: const Duration(seconds: 3),
-        foregroundNotificationConfig: const ForegroundNotificationConfig(
+        intervalDuration: Duration(seconds: 3),
+        foregroundNotificationConfig: ForegroundNotificationConfig(
           notificationText: 'Reality Merge is using your location',
           notificationTitle: 'Reality Merge',
           enableWakeLock: true,

@@ -5,14 +5,16 @@ import '../models/drop.dart';
 import '../services/location_service.dart';
 import '../services/supabase_service.dart';
 import '../services/onboarding_service.dart';
+import '../services/geocoding_service.dart';
 import '../theme/rm_theme.dart';
 import '../widgets/tutorial_overlay.dart';
+import '../widgets/media_thumbnail.dart';
 import 'create_drop_screen.dart';
 import 'profile_screen.dart';
 import 'drop_detail_screen.dart';
 
 class FeedScreen extends StatefulWidget {
-  const FeedScreen({super.key});
+  FeedScreen({super.key});
 
   @override
   State<FeedScreen> createState() => _FeedScreenState();
@@ -33,7 +35,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     super.initState();
     _fabCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: Duration(milliseconds: 600),
     );
     _fabScale = CurvedAnimation(parent: _fabCtrl, curve: Curves.elasticOut);
     _initLocation();
@@ -93,7 +95,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
             currentLng: _position!.longitude,
           ),
         ),
-        transitionDuration: const Duration(milliseconds: 300),
+        transitionDuration: Duration(milliseconds: 300),
       ),
     );
     if (_position != null) await _fetchDrops(_position!);
@@ -110,7 +112,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Explore'),
+                Text('Explore'),
                 if (_position != null)
                   Text(
                     '${_drops.length} drops nearby',
@@ -120,9 +122,9 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.person_outline_rounded),
+                icon: Icon(Icons.person_outline_rounded),
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                  MaterialPageRoute(builder: (_) => ProfileScreen()),
                 ),
               ),
             ],
@@ -150,14 +152,14 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
               },
               backgroundColor: RMColors.primary,
               foregroundColor: Colors.white,
-              icon: const Icon(Icons.add_location_alt_rounded),
-              label: const Text('Drop here'),
+              icon: Icon(Icons.add_location_alt_rounded),
+              label: Text('Drop here'),
             ),
           ),
         ),
         if (_showTutorial)
           TutorialOverlay(
-            steps: const [
+            steps: [
               TutorialStep(
                 icon: Icons.explore_rounded,
                 title: 'Welcome to Reality Merge',
@@ -174,9 +176,9 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                 body: 'Tap "Drop here" to pin a photo, video, or message to your exact location. Set it public or private with a specific allowlist.',
               ),
               TutorialStep(
-                icon: Icons.map_rounded,
-                title: 'See the map',
-                body: 'Switch to the Map tab to see all nearby drops on a live satellite view and get walking directions to any of them.',
+                icon: Icons.navigation_rounded,
+                title: 'Find your way',
+                body: 'Switch to the Compass tab to see which direction the nearest locked drop is in, and how far away it is.',
               ),
             ],
             onDone: () async {
@@ -190,7 +192,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -205,19 +207,19 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     if (_error != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
+          padding: EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.location_off_rounded,
+              Icon(Icons.location_off_rounded,
                   color: RMColors.textHint, size: 48),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               Text(_error!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: RMColors.textSecondary)),
-              const SizedBox(height: 20),
+                  style: TextStyle(color: RMColors.textSecondary)),
+              SizedBox(height: 20),
               OutlinedButton(
-                  onPressed: _initLocation, child: const Text('Try again')),
+                  onPressed: _initLocation, child: Text('Try again')),
             ],
           ),
         ),
@@ -226,10 +228,10 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     if (_drops.isEmpty) {
       return LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
+          physics: AlwaysScrollableScrollPhysics(),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: const Center(
+            child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -252,8 +254,8 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     }
 
     return ListView.builder(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      physics: AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, 100),
       itemCount: _drops.length,
       itemBuilder: (context, index) => _AnimatedDropCard(
         drop: _drops[index],
@@ -269,7 +271,7 @@ class _AnimatedDropCard extends StatefulWidget {
   final int index;
   final VoidCallback onTap;
 
-  const _AnimatedDropCard({
+  _AnimatedDropCard({
     required this.drop,
     required this.index,
     required this.onTap,
@@ -294,7 +296,7 @@ class _AnimatedDropCardState extends State<_AnimatedDropCard>
     );
     _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
     _slide = Tween<Offset>(
-      begin: const Offset(0, 0.12),
+      begin: Offset(0, 0.12),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
     Future.delayed(
@@ -316,7 +318,7 @@ class _AnimatedDropCardState extends State<_AnimatedDropCard>
       child: SlideTransition(
         position: _slide,
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: EdgeInsets.only(bottom: 12),
           child: _DropCard(drop: widget.drop, onTap: widget.onTap),
         ),
       ),
@@ -324,21 +326,71 @@ class _AnimatedDropCardState extends State<_AnimatedDropCard>
   }
 }
 
-class _DropCard extends StatelessWidget {
+class _DropCard extends StatefulWidget {
   final Drop drop;
   final VoidCallback onTap;
 
-  const _DropCard({required this.drop, required this.onTap});
+  _DropCard({required this.drop, required this.onTap});
+
+  @override
+  State<_DropCard> createState() => _DropCardState();
+}
+
+class _DropCardState extends State<_DropCard> {
+  String? _placeLabel;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveLocation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DropCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.drop.id != widget.drop.id) {
+      _placeLabel = null;
+      _resolveLocation();
+    }
+  }
+
+  /// Best-effort place name for the location badge on top of the post.
+  /// Falls back silently to the distance label if this never resolves
+  /// (offline, rate-limited, etc.) — see _locationText.
+  Future<void> _resolveLocation() async {
+    final drop = widget.drop;
+    if (drop.dropLat == null || drop.dropLng == null) return;
+    final label = await GeocodingService.instance
+        .reverseGeocode(drop.dropLat!, drop.dropLng!);
+    if (mounted && label != null) setState(() => _placeLabel = label);
+  }
+
+  String get _locationText {
+    final drop = widget.drop;
+    // Locked drops intentionally keep their exact location a mystery —
+    // only the distance is meaningful until the drop is unlocked.
+    if (!drop.isUnlocked) return drop.distanceLabel;
+    return _placeLabel ?? drop.distanceLabel;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final drop = widget.drop;
     final locked = !drop.isUnlocked;
     final canUnlock = drop.isWithinUnlockRange && locked;
+    final media = drop.mediaItems.isNotEmpty
+        ? drop.mediaItems.first
+        : (drop.mediaUrl != null && drop.mediaType != null
+            ? DropMediaItem(
+                url: drop.mediaUrl!,
+                type: drop.mediaType!,
+                sizeBytes: drop.mediaSizeBytes)
+            : null);
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: Duration(milliseconds: 200),
         decoration: BoxDecoration(
           color: RMColors.surface,
           borderRadius: BorderRadius.circular(16),
@@ -351,116 +403,137 @@ class _DropCard extends StatelessWidget {
             width: canUnlock ? 1.5 : 1,
           ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              // Status indicator
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: locked
-                      ? RMColors.surfaceAlt
-                      : RMColors.success.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  locked
-                      ? (canUnlock
-                          ? Icons.lock_open_rounded
-                          : Icons.lock_rounded)
-                      : Icons.lock_open_rounded,
-                  color: locked
-                      ? (canUnlock ? RMColors.accent : RMColors.textHint)
-                      : RMColors.success,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      locked ? 'Locked drop' : (drop.caption ?? ''),
-                      maxLines: 2,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Location badge — always on top of the post ──────────
+            Padding(
+              padding: EdgeInsets.fromLTRB(14, 12, 14, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.location_on_rounded,
+                      size: 14,
+                      color: locked ? RMColors.textHint : RMColors.primary),
+                  SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      _locationText,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: locked
-                            ? RMColors.textSecondary
-                            : RMColors.textPrimary,
+                        color:
+                            locked ? RMColors.textHint : RMColors.textPrimary,
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        fontStyle: locked ? FontStyle.italic : FontStyle.normal,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
+                  ),
+                  if (drop.isPrivate)
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: RMColors.primaryDim,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'PRIVATE',
+                        style: TextStyle(
+                            color: RMColors.primary,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // ── Media thumbnail ───────────────────────────────────────
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: MediaThumbnailPreview(item: media, locked: locked),
+            ),
+            SizedBox(height: 12),
+
+            // ── Caption + meta + unlock affordance ────────────────────
+            Padding(
+              padding: EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: locked
+                          ? RMColors.surfaceAlt
+                          : RMColors.success.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      locked
+                          ? (canUnlock
+                              ? Icons.lock_open_rounded
+                              : Icons.lock_rounded)
+                          : Icons.lock_open_rounded,
+                      color: locked
+                          ? (canUnlock ? RMColors.accent : RMColors.textHint)
+                          : RMColors.success,
+                      size: 17,
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          locked
-                              ? Icons.directions_walk_rounded
-                              : Icons.person_outline_rounded,
-                          size: 12,
-                          color: RMColors.textHint,
-                        ),
-                        const SizedBox(width: 4),
                         Text(
-                          locked
-                              ? drop.distanceLabel
-                              : drop.creatorUsername,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        if (drop.isPrivate) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: RMColors.primaryDim,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'PRIVATE',
-                              style: TextStyle(
-                                  color: RMColors.primary,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.5),
-                            ),
+                          locked ? 'Locked drop' : (drop.caption ?? ''),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: locked
+                                ? RMColors.textSecondary
+                                : RMColors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            fontStyle:
+                                locked ? FontStyle.italic : FontStyle.normal,
                           ),
+                        ),
+                        if (!locked) ...[
+                          SizedBox(height: 2),
+                          Text('by ${drop.creatorUsername}',
+                              style: Theme.of(context).textTheme.bodySmall),
                         ],
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                  if (canUnlock)
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: RMColors.accent.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: RMColors.accent.withOpacity(0.4)),
+                      ),
+                      child: Text(
+                        'Unlock',
+                        style: TextStyle(
+                            color: RMColors.accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    )
+                  else
+                    Icon(Icons.chevron_right_rounded,
+                        color: RMColors.textHint),
+                ],
               ),
-              if (canUnlock)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: RMColors.accent.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: RMColors.accent.withOpacity(0.4)),
-                  ),
-                  child: const Text(
-                    'Unlock',
-                    style: TextStyle(
-                        color: RMColors.accent,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700),
-                  ),
-                )
-              else
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: RMColors.textHint,
-                ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

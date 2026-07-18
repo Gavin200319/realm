@@ -4,7 +4,7 @@ class ProfileStats {
   final int dropsCreated;
   final int dropsUnlocked;
 
-  const ProfileStats({
+  ProfileStats({
     required this.userId,
     required this.username,
     required this.dropsCreated,

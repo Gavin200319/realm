@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../models/drop.dart';
 import '../services/supabase_service.dart';
+import '../theme/rm_theme.dart';
+import '../widgets/blur_media.dart';
 import 'reactions_screen.dart';
 
 class DropDetailScreen extends StatefulWidget {
@@ -8,7 +13,7 @@ class DropDetailScreen extends StatefulWidget {
   final double currentLat;
   final double currentLng;
 
-  const DropDetailScreen({
+  DropDetailScreen({
     super.key,
     required this.drop,
     required this.currentLat,
@@ -23,11 +28,19 @@ class _DropDetailScreenState extends State<DropDetailScreen> {
   bool _unlocking = false;
   String? _error;
   late bool _unlocked;
+  int _galleryIndex = 0;
+  final _pageCtrl = PageController();
 
   @override
   void initState() {
     super.initState();
     _unlocked = widget.drop.isUnlocked;
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _unlock() async {
@@ -54,117 +67,636 @@ class _DropDetailScreenState extends State<DropDetailScreen> {
     }
   }
 
+  /// Every attachment on this drop, falling back to the single legacy
+  /// media field for drops created before multi-file support existed.
+  List<DropMediaItem> get _media {
+    final drop = widget.drop;
+    if (drop.mediaItems.isNotEmpty) return drop.mediaItems;
+    if (drop.mediaUrl != null && drop.mediaType != null) {
+      return [
+        DropMediaItem(
+          url: drop.mediaUrl!,
+          type: drop.mediaType!,
+          sizeBytes: drop.mediaSizeBytes,
+        ),
+      ];
+    }
+    return [];
+  }
+
+  Future<void> _openOrDownload(String url) async {
+    final uri = Uri.parse(url);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Couldn't open that link.")),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final drop = widget.drop;
     return Scaffold(
-      appBar: AppBar(title: const Text('Drop')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      backgroundColor: RMColors.background,
+      appBar: AppBar(
+        title: Text('Drop'),
+        backgroundColor: RMColors.background,
+      ),
+      body: !_unlocked ? _buildLocked(drop) : _buildUnlocked(drop),
+    );
+  }
+
+  // ── Locked state ──────────────────────────────────────────────────────
+
+  Widget _buildLocked(Drop drop) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(28),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (!_unlocked) ...[
-              const Icon(Icons.lock_outline, size: 48),
-              const SizedBox(height: 16),
-              Text(
-                'This Drop is locked.',
-                style: Theme.of(context).textTheme.titleLarge,
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                color: RMColors.surfaceAlt,
+                shape: BoxShape.circle,
+                border: Border.all(color: RMColors.border),
               ),
-              const SizedBox(height: 8),
-              Text(drop.distanceLabel),
-              const SizedBox(height: 24),
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(_error!, style: const TextStyle(color: Colors.red)),
-                ),
-              FilledButton(
+              child: Icon(Icons.lock_outline_rounded,
+                  size: 36, color: RMColors.textSecondary),
+            ),
+            SizedBox(height: 20),
+            Text(
+              'This Drop is locked.',
+              style: TextStyle(
+                  color: RMColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 8),
+            Text(drop.distanceLabel,
+                style: TextStyle(
+                    color: RMColors.textSecondary, fontSize: 13)),
+            SizedBox(height: 4),
+            Text('Get within ${drop.unlockRadiusM}m to unlock',
+                style: TextStyle(
+                    color: RMColors.textHint, fontSize: 12)),
+            SizedBox(height: 28),
+            if (_error != null)
+              Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: Text(_error!,
+                    style: TextStyle(color: RMColors.danger)),
+              ),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
                 onPressed: _unlocking ? null : _unlock,
                 child: _unlocking
-                    ? const SizedBox(
+                    ? SizedBox(
                         height: 18,
                         width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Try to unlock'),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Text('Try to unlock'),
               ),
-            ] else ...[
-              if (drop.mediaUrl != null) ...[
-                if (drop.mediaType == DropMediaType.photo)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(drop.mediaUrl!),
-                  )
-                else if (drop.mediaType == DropMediaType.video)
-                  Container(
-                    height: 180,
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.play_circle_outline, size: 56),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: () {
-                              // TODO: open video player in v3
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Video player coming in v3')),
-                              );
-                            },
-                            child: const Text('Tap to play video'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else if (drop.mediaType == DropMediaType.document)
-                  ListTile(
-                    leading: const Icon(Icons.insert_drive_file, size: 40),
-                    title: const Text('Attached document'),
-                    subtitle: const Text('Tap to open'),
-                    onTap: () {
-                      // TODO: open document viewer in v3
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Document viewer coming in v3')),
-                      );
-                    },
-                  ),
-                const SizedBox(height: 16),
-              ],
-              if (drop.isPrivate)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.lock, size: 14, color: Colors.purple),
-                      const SizedBox(width: 4),
-                      Text('Private drop',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: Colors.purple)),
-                    ],
-                  ),
-                ),
-              Text(drop.caption ?? '', style: Theme.of(context).textTheme.bodyLarge),
-              const SizedBox(height: 8),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Unlocked state ────────────────────────────────────────────────────
+
+  Widget _buildUnlocked(Drop drop) {
+    final media = _media;
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (media.isNotEmpty) ...[
+            _MediaGallery(
+              items: media,
+              controller: _pageCtrl,
+              index: _galleryIndex,
+              onPageChanged: (i) => setState(() => _galleryIndex = i),
+              allowDownload: drop.allowDownload,
+              onOpenOrDownload: _openOrDownload,
+            ),
+            SizedBox(height: 16),
+          ],
+          if (drop.isPrivate)
+            Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.lock_rounded,
+                      size: 13, color: RMColors.primary),
+                  SizedBox(width: 5),
+                  Text('Private drop',
+                      style: TextStyle(
+                          color: RMColors.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          Text(
+            drop.caption ?? '',
+            style: TextStyle(
+                color: RMColors.textPrimary, fontSize: 16, height: 1.5),
+          ),
+          SizedBox(height: 14),
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 13,
+                backgroundColor: RMColors.primaryDim,
+                child: Icon(Icons.person_rounded,
+                    size: 14, color: RMColors.primary),
+              ),
+              SizedBox(width: 8),
               Text('by ${drop.creatorUsername}',
-                  style: Theme.of(context).textTheme.bodySmall),
-              const SizedBox(height: 24),
-              OutlinedButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ReactionsScreen(dropId: drop.id),
-                  ),
-                ),
-                icon: const Icon(Icons.favorite_border),
-                label: const Text('Reactions & Comments'),
+                  style: TextStyle(
+                      color: RMColors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
+              SizedBox(width: 10),
+              Text('·', style: TextStyle(color: RMColors.textHint)),
+              SizedBox(width: 10),
+              Text(
+                DateFormat('MMM d, y').format(drop.createdAt),
+                style: TextStyle(
+                    color: RMColors.textHint, fontSize: 12),
               ),
             ],
+          ),
+          if (drop.totalSizeLabel != null) ...[
+            SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.sd_storage_rounded,
+                    size: 13, color: RMColors.textHint),
+                SizedBox(width: 5),
+                Text('${drop.totalSizeLabel} total',
+                    style: TextStyle(
+                        color: RMColors.textHint, fontSize: 12)),
+              ],
+            ),
+          ],
+          SizedBox(height: 22),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ReactionsScreen(dropId: drop.id),
+                ),
+              ),
+              icon: Icon(Icons.favorite_border_rounded, size: 18),
+              label: Text('Reactions & Comments'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Media gallery ──────────────────────────────────────────────────────────
+
+class _MediaGallery extends StatelessWidget {
+  final List<DropMediaItem> items;
+  final PageController controller;
+  final int index;
+  final ValueChanged<int> onPageChanged;
+  final bool allowDownload;
+  final Future<void> Function(String url) onOpenOrDownload;
+
+  _MediaGallery({
+    required this.items,
+    required this.controller,
+    required this.index,
+    required this.onPageChanged,
+    required this.allowDownload,
+    required this.onOpenOrDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            height: 260,
+            child: PageView.builder(
+              controller: controller,
+              itemCount: items.length,
+              onPageChanged: onPageChanged,
+              itemBuilder: (context, i) => _MediaTile(
+                item: items[i],
+                allowDownload: allowDownload,
+                onOpenOrDownload: onOpenOrDownload,
+              ),
+            ),
+          ),
+        ),
+        if (items.length > 1) ...[
+          SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < items.length; i++)
+                AnimatedContainer(
+                  duration: Duration(milliseconds: 200),
+                  margin: EdgeInsets.symmetric(horizontal: 3),
+                  width: i == index ? 18 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: i == index ? RMColors.primary : RMColors.border,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _MediaTile extends StatelessWidget {
+  final DropMediaItem item;
+  final bool allowDownload;
+  final Future<void> Function(String url) onOpenOrDownload;
+
+  _MediaTile({
+    required this.item,
+    required this.allowDownload,
+    required this.onOpenOrDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    switch (item.type) {
+      case DropMediaType.photo:
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            BlurUpImage(
+              url: item.url,
+              height: 260,
+              borderRadius: BorderRadius.zero,
+            ),
+            _CornerBadge(item: item),
+            if (allowDownload)
+              _DownloadFab(onTap: () => onOpenOrDownload(item.url)),
+          ],
+        );
+      case DropMediaType.video:
+        return _VideoTile(
+          item: item,
+          allowDownload: allowDownload,
+          onOpenOrDownload: onOpenOrDownload,
+        );
+      case DropMediaType.document:
+        return _DocumentTile(
+          item: item,
+          allowDownload: allowDownload,
+          onOpenOrDownload: onOpenOrDownload,
+        );
+    }
+  }
+}
+
+class _CornerBadge extends StatelessWidget {
+  final DropMediaItem item;
+  _CornerBadge({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = item.sizeLabel;
+    if (label == null && item.name == null) return SizedBox.shrink();
+    return Positioned(
+      left: 10,
+      bottom: 10,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.55),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (item.name != null)
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 140),
+                child: Text(item.name!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+              ),
+            if (item.name != null && label != null)
+              Text('  ·  ',
+                  style: TextStyle(color: Colors.white54, fontSize: 11)),
+            if (label != null)
+              Text(label,
+                  style: TextStyle(color: Colors.white70, fontSize: 11)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DownloadFab extends StatelessWidget {
+  final VoidCallback onTap;
+  _DownloadFab({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 10,
+      top: 10,
+      child: Material(
+        color: Colors.black.withOpacity(0.55),
+        shape: CircleBorder(),
+        child: InkWell(
+          customBorder: CircleBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.all(9),
+            child: Icon(Icons.download_rounded, color: Colors.white, size: 18),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Video ────────────────────────────────────────────────────────────────
+
+class _VideoTile extends StatefulWidget {
+  final DropMediaItem item;
+  final bool allowDownload;
+  final Future<void> Function(String url) onOpenOrDownload;
+
+  _VideoTile({
+    required this.item,
+    required this.allowDownload,
+    required this.onOpenOrDownload,
+  });
+
+  @override
+  State<_VideoTile> createState() => _VideoTileState();
+}
+
+class _VideoTileState extends State<_VideoTile> {
+  VideoPlayerController? _controller;
+  bool _initializing = true;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final controller =
+        VideoPlayerController.networkUrl(Uri.parse(widget.item.url));
+    try {
+      await controller.initialize();
+      await controller.setLooping(true);
+      // video_player only decodes and uploads a frame to its texture
+      // once playback has actually started — right after initialize()
+      // the texture is blank, so the "thumbnail" is just a black box
+      // until the person taps play. Kick off a play/pause cycle here so
+      // the first frame is rendered and paused immediately, giving a
+      // real thumbnail instead of a flash of black.
+      await controller.play();
+      await controller.pause();
+      await controller.seekTo(Duration.zero);
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      setState(() {
+        _controller = controller;
+        _initializing = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _initializing = false;
+          _failed = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _togglePlay() {
+    final c = _controller;
+    if (c == null) return;
+    setState(() {
+      c.value.isPlaying ? c.pause() : c.play();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_initializing) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          BlurPlaceholder(icon: Icons.videocam_rounded),
+          Center(
+            child: SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2.4, color: RMColors.primary),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_failed || _controller == null) {
+      return Container(
+        color: RMColors.surfaceAlt,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline_rounded,
+                  color: RMColors.textHint, size: 36),
+              SizedBox(height: 8),
+              Text("Couldn't load video",
+                  style: TextStyle(color: RMColors.textSecondary)),
+              if (widget.allowDownload) ...[
+                SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => widget.onOpenOrDownload(widget.item.url),
+                  child: Text('Open externally'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    final c = _controller!;
+    return GestureDetector(
+      onTap: _togglePlay,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: c.value.size.width,
+              height: c.value.size.height,
+              child: VideoPlayer(c),
+            ),
+          ),
+          AnimatedOpacity(
+            opacity: c.value.isPlaying ? 0 : 1,
+            duration: Duration(milliseconds: 200),
+            child: Container(
+              color: Colors.black26,
+              child: Center(
+                child: Icon(Icons.play_circle_fill_rounded,
+                    color: Colors.white, size: 56),
+              ),
+            ),
+          ),
+          _CornerBadge(item: widget.item),
+          if (widget.allowDownload)
+            _DownloadFab(onTap: () => widget.onOpenOrDownload(widget.item.url)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Document ────────────────────────────────────────────────────────────
+
+class _DocumentTile extends StatefulWidget {
+  final DropMediaItem item;
+  final bool allowDownload;
+  final Future<void> Function(String url) onOpenOrDownload;
+
+  _DocumentTile({
+    required this.item,
+    required this.allowDownload,
+    required this.onOpenOrDownload,
+  });
+
+  @override
+  State<_DocumentTile> createState() => _DocumentTileState();
+}
+
+class _DocumentTileState extends State<_DocumentTile> {
+  bool _preparing = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // A brief, deliberate "preparing document" beat behind the blur
+    // placeholder — mirrors the blur-up feel of the image/video tiles
+    // even though there's no real thumbnail to fade in from.
+    Future.delayed(Duration(milliseconds: 500), () {
+      if (mounted) setState(() => _preparing = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_preparing) {
+      return BlurPlaceholder(icon: Icons.insert_drive_file_rounded);
+    }
+
+    final ext = widget.item.name?.split('.').last.toUpperCase() ?? 'FILE';
+    return Container(
+      color: RMColors.surfaceAlt,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: RMColors.primaryDim,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Center(
+                child: Text(ext,
+                    style: TextStyle(
+                        color: RMColors.primary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13)),
+              ),
+            ),
+            SizedBox(height: 12),
+            Text(
+              widget.item.name ?? 'Attached document',
+              style: TextStyle(
+                  color: RMColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (widget.item.sizeLabel != null)
+              Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: Text(widget.item.sizeLabel!,
+                    style: TextStyle(
+                        color: RMColors.textSecondary, fontSize: 11)),
+              ),
+            SizedBox(height: 14),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => widget.onOpenOrDownload(widget.item.url),
+                  icon: Icon(Icons.open_in_new_rounded, size: 15),
+                  label: Text('Open'),
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: Size(0, 38),
+                      padding: EdgeInsets.symmetric(horizontal: 14)),
+                ),
+                if (widget.allowDownload) ...[
+                  SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: () => widget.onOpenOrDownload(widget.item.url),
+                    icon: Icon(Icons.download_rounded, size: 15),
+                    label: Text('Download'),
+                    style: FilledButton.styleFrom(
+                        minimumSize: Size(0, 38),
+                        padding: EdgeInsets.symmetric(horizontal: 14)),
+                  ),
+                ],
+              ],
+            ),
           ],
         ),
       ),

@@ -7,11 +7,14 @@ for the product scope. This repo is the v1 implementation of that scope only
 ## Setup
 
 1. **Create a Supabase project** at https://supabase.com/dashboard.
-2. Run `supabase/schema.sql` in the Supabase SQL editor. This creates all
-   tables, RLS policies, and the two RPC functions (`nearby_drops`,
-   `attempt_unlock`) that the app depends on.
+2. Run `supabase/schema.sql` in the Supabase SQL editor, then run
+   `supabase/v2-migration.sql`, `supabase/v2.1-migration.sql`,
+   `supabase/v3-migration.sql`, and `supabase/v4-migration.sql` in that
+   order. Together these create all tables, RLS policies, and RPC
+   functions (`nearby_drops`, `attempt_unlock`, `grant_drop_access`,
+   `list_conversations`, `mark_conversation_read`) that the app depends on.
 3. In Supabase Storage, create a public bucket named `drop-media` (used for
-   Drop photos).
+   Drop photos/videos/documents).
 4. **Disable email confirmation for now** (dev convenience, not a code
    change): Authentication -> Providers -> Email -> turn off "Confirm
    email". With it off, `signUp` logs the user in immediately. With it on,
@@ -19,10 +22,8 @@ for the product scope. This repo is the v1 implementation of that scope only
    link — the current sign-up screen doesn't yet handle that "check your
    email" state, so leave it off until that's added, and turn it back on
    before any real launch.
-5. Copy `.env.example` to `.env` and fill in:
-   - `SUPABASE_URL` / `SUPABASE_ANON_KEY` from Project Settings -> API
-   - `MAPBOX_ACCESS_TOKEN` from https://account.mapbox.com/ (only needed
-     if/when you wire in the map view — the feed view works without it)
+5. Copy `.env.example` to `.env` and fill in `SUPABASE_URL` /
+   `SUPABASE_ANON_KEY` from Project Settings -> API.
 6. Install Flutter dependencies:
    ```
    flutter pub get
@@ -39,11 +40,16 @@ for the product scope. This repo is the v1 implementation of that scope only
 - Email/password auth (username login is stubbed — see the note in
   `supabase_service.dart`; needs a `resolve_login_email` RPC before it's
   usable, left as a TODO so nothing about auth security is faked)
-- Feed of nearby Drops, locked (distance only) vs. unlocked (full content)
+- Feed of nearby Drops with location + media thumbnail on top of each post,
+  locked (distance only) vs. unlocked (full content)
 - Server-verified unlock: the `attempt_unlock` RPC recalculates distance
   server-side — the client's claimed GPS position is never trusted alone
-- Creating a Drop at your current location, with photo + caption + a
-  configurable unlock radius
+- Creating a Drop at your current location, with photo/video/document +
+  caption + a configurable unlock radius
+- Compass tab: device-heading compass that also points toward the nearest
+  locked Drop
+- Chats tab: 1:1 direct messages between users, with realtime updates
+- Reactions & comments on Drops (unlimited comments per user per Drop)
 - Profile stats: Drops created, places visited
 
 ## What's intentionally not here

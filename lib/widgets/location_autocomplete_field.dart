@@ -9,7 +9,7 @@ class PlaceResult {
   final String displayLine2; // e.g. "Nairobi County, Kenya"
   final String fullText;     // what gets stored in the profile
 
-  const PlaceResult({
+  PlaceResult({
     required this.displayLine1,
     required this.displayLine2,
     required this.fullText,
@@ -70,7 +70,7 @@ class LocationAutocompleteField extends StatefulWidget {
   final ValueChanged<String> onSelected;
   final String? initialValue;
 
-  const LocationAutocompleteField({
+  LocationAutocompleteField({
     super.key,
     required this.label,
     required this.onSelected,
@@ -166,7 +166,7 @@ class _LocationAutocompleteFieldState
   void _onChanged(String value) {
     _debounce?.cancel();
     // Wait 400ms after the user stops typing before hitting the API
-    _debounce = Timer(const Duration(milliseconds: 400), () {
+    _debounce = Timer(Duration(milliseconds: 400), () {
       _search(value);
     });
   }
@@ -189,7 +189,7 @@ class _LocationAutocompleteFieldState
           decoration: InputDecoration(
             labelText: widget.label,
             suffixIcon: _loading
-                ? const Padding(
+                ? Padding(
                     padding: EdgeInsets.all(12),
                     child: SizedBox(
                       height: 16,
@@ -208,20 +208,20 @@ class _LocationAutocompleteFieldState
               border: Border.all(
                 color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
               ),
-              borderRadius: const BorderRadius.vertical(
+              borderRadius: BorderRadius.vertical(
                 bottom: Radius.circular(8),
               ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.2),
                   blurRadius: 8,
-                  offset: const Offset(0, 4),
+                  offset: Offset(0, 4),
                 ),
               ],
             ),
             child: ListView.separated(
               shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
+              physics: NeverScrollableScrollPhysics(),
               itemCount: _results.length,
               separatorBuilder: (_, __) => Divider(
                 height: 1,
@@ -232,21 +232,21 @@ class _LocationAutocompleteFieldState
                 return InkWell(
                   onTap: () => _select(result),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
+                    padding: EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 12,
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.location_on_outlined, size: 18),
-                        const SizedBox(width: 10),
+                        Icon(Icons.location_on_outlined, size: 18),
+                        SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 result.displayLine1,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),

@@ -7,7 +7,7 @@ class TutorialStep {
   final IconData icon;
   final Alignment alignment; // where the tooltip appears on screen
 
-  const TutorialStep({
+  TutorialStep({
     required this.title,
     required this.body,
     required this.icon,
@@ -21,7 +21,7 @@ class TutorialOverlay extends StatefulWidget {
   final List<TutorialStep> steps;
   final VoidCallback onDone;
 
-  const TutorialOverlay({
+  TutorialOverlay({
     super.key,
     required this.steps,
     required this.onDone,
@@ -47,7 +47,7 @@ class _TutorialOverlayState extends State<TutorialOverlay>
     // Hand bobbing animation
     _handCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: Duration(milliseconds: 900),
     )..repeat(reverse: true);
 
     _handBob = Tween<double>(begin: 0, end: 12).animate(
@@ -57,12 +57,12 @@ class _TutorialOverlayState extends State<TutorialOverlay>
     // Card entrance animation
     _cardCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 350),
+      duration: Duration(milliseconds: 350),
     );
 
     _cardFade = CurvedAnimation(parent: _cardCtrl, curve: Curves.easeOut);
     _cardSlide = Tween<Offset>(
-      begin: const Offset(0, 0.08),
+      begin: Offset(0, 0.08),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _cardCtrl, curve: Curves.easeOut));
 
@@ -105,7 +105,7 @@ class _TutorialOverlayState extends State<TutorialOverlay>
                 return Positioned(
                   left: size.width / 2 - 24,
                   top: size.height / 2 - 60 + _handBob.value,
-                  child: const _HandIcon(),
+                  child: _HandIcon(),
                 );
               },
             ),
@@ -135,7 +135,7 @@ class _TutorialOverlayState extends State<TutorialOverlay>
               right: 16,
               child: TextButton(
                 onPressed: widget.onDone,
-                child: const Text(
+                child: Text(
                   'Skip',
                   style: TextStyle(color: Colors.white70, fontSize: 14),
                 ),
@@ -149,7 +149,7 @@ class _TutorialOverlayState extends State<TutorialOverlay>
 }
 
 class _HandIcon extends StatelessWidget {
-  const _HandIcon();
+  _HandIcon();
 
   @override
   Widget build(BuildContext context) {
@@ -161,7 +161,7 @@ class _HandIcon extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: RMColors.primary, width: 2),
       ),
-      child: const Icon(Icons.touch_app, color: RMColors.primary, size: 28),
+      child: Icon(Icons.touch_app, color: RMColors.primary, size: 28),
     );
   }
 }
@@ -172,7 +172,7 @@ class _TutorialCard extends StatelessWidget {
   final int total;
   final VoidCallback onNext;
 
-  const _TutorialCard({
+  _TutorialCard({
     required this.step,
     required this.current,
     required this.total,
@@ -182,7 +182,7 @@ class _TutorialCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: RMColors.surface,
         borderRadius: BorderRadius.circular(24),
@@ -210,23 +210,23 @@ class _TutorialCard extends StatelessWidget {
                 ),
                 child: Icon(step.icon, color: RMColors.primary, size: 22),
               ),
-              const Spacer(),
+              Spacer(),
               Text(
                 '$current / $total',
                 style: Theme.of(context).textTheme.labelSmall,
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           Text(step.title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(step.body, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 20),
+          SizedBox(height: 20),
           // Progress dots
           Row(
             children: List.generate(total, (i) => AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              margin: const EdgeInsets.only(right: 6),
+              duration: Duration(milliseconds: 250),
+              margin: EdgeInsets.only(right: 6),
               width: i == current - 1 ? 20 : 6,
               height: 6,
               decoration: BoxDecoration(
@@ -238,7 +238,7 @@ class _TutorialCard extends StatelessWidget {
             )),
             mainAxisAlignment: MainAxisAlignment.start,
           ),
-          const SizedBox(height: 20),
+          SizedBox(height: 20),
           FilledButton(
             onPressed: onNext,
             child: Text(current == total ? 'Got it' : 'Next'),

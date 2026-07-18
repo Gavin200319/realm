@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/drop.dart';
@@ -112,6 +113,9 @@ class SupabaseService {
     required String caption,
     String? mediaUrl,
     String? mediaType,
+    int? mediaSizeBytes,
+    bool allowDownload = true,
+    List<Map<String, dynamic>> mediaItems = [],
     int unlockRadiusM = 50,
     String visibility = 'public',
   }) async {
@@ -124,22 +128,65 @@ class SupabaseService {
       'caption': caption,
       'media_url': mediaUrl,
       'media_type': mediaType,
+      'media_size_bytes': mediaSizeBytes,
+      'allow_download': allowDownload,
+      'media_items': mediaItems,
       'unlock_radius_m': unlockRadiusM,
       'visibility': visibility,
     });
   }
 
+  /// Uploads a single file's bytes to the `drop-media` bucket and returns
+  /// its public URL. [onProgress] is called with a 0.0–1.0 fraction.
+  ///
+  /// The Supabase storage client doesn't expose true byte-level upload
+  /// progress for `uploadBinary`, so progress here is simulated: it
+  /// climbs smoothly toward ~90% for as long as the upload future is
+  /// still pending (scaled roughly to the file size so bigger files
+  /// "feel" slower), then snaps to 100% the moment the upload actually
+  /// completes. This keeps the progress toast honest about "still
+  /// working" vs "done" without pretending to know exact byte counts.
   Future<String> uploadDropMedia({
     required Uint8List bytes,
     required String mediaType, // 'photo', 'video', 'document'
     String extension = 'jpg',
+    void Function(double progress)? onProgress,
   }) async {
     final user = currentUser;
     if (user == null) throw Exception('Must be signed in to upload media.');
 
     final fileName =
-        '${user.id}/${DateTime.now().millisecondsSinceEpoch}.$extension';
-    await _client.storage.from('drop-media').uploadBinary(fileName, bytes);
+        '${user.id}/${DateTime.now().millisecondsSinceEpoch}_'
+        '${bytes.length}.$extension';
+
+    Timer? ticker;
+    if (onProgress != null) {
+      // Roughly 1 simulated "tick" per 150ms; total ramp time scales
+      // with file size (capped) so a 50MB video doesn't rocket to 90%
+      // in half a second while a 20KB photo doesn't crawl either.
+      final estimatedMs = (bytes.length / 1024 / 40).clamp(600, 12000);
+      final steps = (estimatedMs / 150).clamp(4, 80).round();
+      var step = 0;
+      onProgress(0.02);
+      ticker = Timer.periodic(Duration(milliseconds: 150), (t) {
+        step++;
+        final fraction = (step / steps) * 0.9;
+        onProgress(fraction.clamp(0.0, 0.9));
+        if (step >= steps) t.cancel();
+      });
+    }
+
+    try {
+      await _client.storage.from('drop-media').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: FileOptions(upsert: false),
+          );
+    } finally {
+      ticker?.cancel();
+    }
+
+    onProgress?.call(1.0);
     return _client.storage.from('drop-media').getPublicUrl(fileName);
   }
 
@@ -256,5 +303,68 @@ class SupabaseService {
     if (user == null) return;
     await _client.from('profiles').delete().eq('id', user.id);
     await signOut();
+  }
+
+  // ---------------------------------------------------------------
+  // Chats (direct messages)
+  // ---------------------------------------------------------------
+
+  /// One row per person the current user has exchanged messages with,
+  /// newest conversation first. Backed by the `list_conversations` RPC
+  /// (see v4-migration.sql).
+  Future<List<Map<String, dynamic>>> fetchConversations() async {
+    final rows = await _client.rpc('list_conversations');
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
+  /// Full message history between the current user and [otherUserId],
+  /// oldest first (ready to feed straight into a chat list).
+  Future<List<Map<String, dynamic>>> fetchMessages(
+      {required String otherUserId}) async {
+    final me = currentUser?.id;
+    if (me == null) throw Exception('Must be signed in to view messages.');
+    final rows = await _client
+        .from('messages')
+        .select()
+        .or('and(sender_id.eq.$me,recipient_id.eq.$otherUserId),'
+            'and(sender_id.eq.$otherUserId,recipient_id.eq.$me)')
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// A realtime stream of every row in `messages` between the current
+  /// user and [otherUserId] — used to live-update an open chat thread.
+  Stream<List<Map<String, dynamic>>> watchMessages(
+      {required String otherUserId}) {
+    final me = currentUser?.id;
+    if (me == null) return const Stream.empty();
+    return _client
+        .from('messages')
+        .stream(primaryKey: ['id'])
+        .order('created_at')
+        .map((rows) => rows.where((r) {
+              final sender = r['sender_id'] as String?;
+              final recipient = r['recipient_id'] as String?;
+              return (sender == me && recipient == otherUserId) ||
+                  (sender == otherUserId && recipient == me);
+            }).toList());
+  }
+
+  Future<void> sendMessage({
+    required String recipientId,
+    required String content,
+  }) async {
+    final me = currentUser;
+    if (me == null) throw Exception('Must be signed in to send messages.');
+    await _client.from('messages').insert({
+      'sender_id': me.id,
+      'recipient_id': recipientId,
+      'content': content,
+    });
+  }
+
+  Future<void> markConversationRead(String otherUserId) async {
+    await _client.rpc('mark_conversation_read',
+        params: {'other_user_id': otherUserId});
   }
 }

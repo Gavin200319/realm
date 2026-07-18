@@ -2,18 +2,41 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import '../models/drop.dart';
 import '../services/supabase_service.dart';
 import '../services/onboarding_service.dart';
 import '../services/drop_events.dart';
 import '../theme/rm_theme.dart';
 import '../widgets/tutorial_overlay.dart';
 import '../widgets/location_autocomplete_field.dart';
+import '../widgets/upload_progress_toast.dart';
+
+/// One file the user has picked to attach to this drop, plus everything
+/// needed to preview and later upload it.
+class _PickedMedia {
+  final File file;
+  final String mediaType; // 'photo' | 'video' | 'document'
+  final String fileName;
+  int? sizeBytes;
+
+  _PickedMedia({
+    required this.file,
+    required this.mediaType,
+    required this.fileName,
+    this.sizeBytes,
+  });
+
+  String get extension {
+    final parts = file.path.split('.');
+    return parts.length > 1 ? parts.last.toLowerCase() : 'bin';
+  }
+}
 
 class CreateDropScreen extends StatefulWidget {
   final double lat;
   final double lng;
 
-  const CreateDropScreen({super.key, required this.lat, required this.lng});
+  CreateDropScreen({super.key, required this.lat, required this.lng});
 
   @override
   State<CreateDropScreen> createState() => _CreateDropScreenState();
@@ -24,10 +47,9 @@ class _CreateDropScreenState extends State<CreateDropScreen>
   final _captionCtrl = TextEditingController();
   final _userSearchCtrl = TextEditingController();
   int _radius = 50;
-  File? _mediaFile;
-  String _mediaType = 'photo';
-  String _fileName = '';
+  final List<_PickedMedia> _mediaList = [];
   String _visibility = 'public';
+  bool _allowDownload = true;
   List<String> _allowedUsers = [];
   List<Map<String, dynamic>> _userSuggestions = [];
   bool _saving = false;
@@ -43,7 +65,7 @@ class _CreateDropScreenState extends State<CreateDropScreen>
     super.initState();
     _enterCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: Duration(milliseconds: 400),
     )..forward();
     _enterFade = CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
     _checkTutorial();
@@ -62,51 +84,84 @@ class _CreateDropScreenState extends State<CreateDropScreen>
     if (mounted) setState(() => _showTutorial = show);
   }
 
-  Future<void> _pickPhoto() async {
+  /// Reads file size off disk (falls back to null on any read error —
+  /// we'd rather show "no size" than block the pick).
+  Future<int?> _sizeOf(File file) async {
+    try {
+      return await file.length();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _addPicked(File file, String mediaType, String name) async {
+    final size = await _sizeOf(file);
+    if (!mounted) return;
+    setState(() {
+      _mediaList.add(_PickedMedia(
+        file: file,
+        mediaType: mediaType,
+        fileName: name,
+        sizeBytes: size,
+      ));
+      _error = null;
+    });
+  }
+
+  /// Quick single photo capture straight from the camera.
+  Future<void> _capturePhoto() async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.camera,
       maxWidth: 1600,
       imageQuality: 85,
     );
     if (picked != null) {
-      setState(() {
-        _mediaFile = File(picked.path);
-        _mediaType = 'photo';
-        _fileName = picked.name;
-        _error = null;
-      });
+      await _addPicked(File(picked.path), 'photo', picked.name);
     }
   }
 
-  Future<void> _pickVideo() async {
-    final picked = await ImagePicker().pickVideo(
-      source: ImageSource.gallery,
-      maxDuration: const Duration(minutes: 3),
+  /// Pick one or more photos from the gallery.
+  Future<void> _pickPhotos() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: true,
     );
-    if (picked != null) {
-      setState(() {
-        _mediaFile = File(picked.path);
-        _mediaType = 'video';
-        _fileName = picked.name;
-        _error = null;
-      });
+    if (result == null) return;
+    for (final f in result.files) {
+      if (f.path == null) continue;
+      await _addPicked(File(f.path!), 'photo', f.name);
     }
   }
 
-  Future<void> _pickDocument() async {
+  /// Pick one or more videos.
+  Future<void> _pickVideos() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      allowMultiple: true,
+    );
+    if (result == null) return;
+    for (final f in result.files) {
+      if (f.path == null) continue;
+      await _addPicked(File(f.path!), 'video', f.name);
+    }
+  }
+
+  /// Pick one or more documents.
+  Future<void> _pickDocuments() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'ppt', 'pptx'],
-      allowMultiple: false,
+      allowMultiple: true,
     );
-    if (result != null && result.files.single.path != null) {
-      setState(() {
-        _mediaFile = File(result.files.single.path!);
-        _mediaType = 'document';
-        _fileName = result.files.single.name;
-        _error = null;
-      });
+    if (result == null) return;
+    for (final f in result.files) {
+      if (f.path == null) continue;
+      await _addPicked(File(f.path!), 'document', f.name);
     }
+  }
+
+  void _removeMedia(int index) {
+    setState(() => _mediaList.removeAt(index));
   }
 
   Future<void> _searchUsers(String query) async {
@@ -135,13 +190,6 @@ class _CreateDropScreenState extends State<CreateDropScreen>
     });
   }
 
-  String get _fileExt {
-    if (_mediaFile == null) return 'jpg';
-    final path = _mediaFile!.path;
-    final parts = path.split('.');
-    return parts.length > 1 ? parts.last.toLowerCase() : 'bin';
-  }
-
   Future<void> _save() async {
     if (_captionCtrl.text.trim().isEmpty) {
       setState(() => _error = 'Add a caption before dropping.');
@@ -153,23 +201,54 @@ class _CreateDropScreenState extends State<CreateDropScreen>
       return;
     }
     setState(() { _saving = true; _error = null; });
+
+    UploadProgressToast? toast;
     try {
-      String? mediaUrl;
-      if (_mediaFile != null) {
-        final bytes = await _mediaFile!.readAsBytes();
-        mediaUrl = await SupabaseService.instance.uploadDropMedia(
-          bytes: bytes,
-          mediaType: _mediaType,
-          extension: _fileExt,
+      final mediaItems = <Map<String, dynamic>>[];
+
+      if (_mediaList.isNotEmpty) {
+        toast = UploadProgressToast(context);
+        toast.show(
+          fileName: _mediaList.first.fileName,
+          fileCount: _mediaList.length,
         );
+
+        for (var i = 0; i < _mediaList.length; i++) {
+          final item = _mediaList[i];
+          final bytes = await item.file.readAsBytes();
+          final url = await SupabaseService.instance.uploadDropMedia(
+            bytes: bytes,
+            mediaType: item.mediaType,
+            extension: item.extension,
+            onProgress: (p) => toast?.update(
+              fileName: item.fileName,
+              fileIndex: i + 1,
+              fileCount: _mediaList.length,
+              progress: p,
+            ),
+          );
+          mediaItems.add({
+            'url': url,
+            'type': item.mediaType,
+            'size_bytes': item.sizeBytes ?? bytes.length,
+            'name': item.fileName,
+          });
+        }
+
+        await toast.finish();
       }
+
+      final primary = mediaItems.isNotEmpty ? mediaItems.first : null;
 
       await SupabaseService.instance.createDrop(
         lat: widget.lat,
         lng: widget.lng,
         caption: _captionCtrl.text.trim(),
-        mediaUrl: mediaUrl,
-        mediaType: _mediaFile != null ? _mediaType : null,
+        mediaUrl: primary?['url'] as String?,
+        mediaType: primary?['type'] as String?,
+        mediaSizeBytes: primary?['size_bytes'] as int?,
+        allowDownload: _allowDownload,
+        mediaItems: mediaItems,
         unlockRadiusM: _radius,
         visibility: _visibility,
       );
@@ -191,7 +270,8 @@ class _CreateDropScreenState extends State<CreateDropScreen>
       DropEvents.instance.notifyDropCreated();
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      setState(() => _error = e.toString());
+      await toast?.fail(e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -204,13 +284,13 @@ class _CreateDropScreenState extends State<CreateDropScreen>
         Scaffold(
           backgroundColor: RMColors.background,
           appBar: AppBar(
-            title: const Text('Leave a Drop'),
+            title: Text('Leave a Drop'),
             backgroundColor: RMColors.background,
           ),
           body: FadeTransition(
             opacity: _enterFade,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+              padding: EdgeInsets.fromLTRB(20, 8, 20, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -220,58 +300,65 @@ class _CreateDropScreenState extends State<CreateDropScreen>
                       _MediaPicker(
                         icon: Icons.photo_camera_rounded,
                         label: 'Photo',
-                        selected: _mediaType == 'photo' && _mediaFile != null,
-                        onTap: _pickPhoto,
+                        selected: _mediaList.any((m) => m.mediaType == 'photo'),
+                        onTap: _pickPhotos,
+                        onCameraTap: _capturePhoto,
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: 10),
                       _MediaPicker(
                         icon: Icons.videocam_rounded,
                         label: 'Video',
-                        selected: _mediaType == 'video' && _mediaFile != null,
-                        onTap: _pickVideo,
+                        selected: _mediaList.any((m) => m.mediaType == 'video'),
+                        onTap: _pickVideos,
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: 10),
                       _MediaPicker(
                         icon: Icons.insert_drive_file_rounded,
                         label: 'Document',
-                        selected: _mediaType == 'document' && _mediaFile != null,
-                        onTap: _pickDocument,
+                        selected:
+                            _mediaList.any((m) => m.mediaType == 'document'),
+                        onTap: _pickDocuments,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
-
-                  // Media preview
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 250),
-                    child: _mediaFile == null
-                        ? const SizedBox.shrink()
-                        : _buildMediaPreview(),
+                  SizedBox(height: 6),
+                  Text(
+                    'Tap to pick multiple. Long-press Photo to use the camera.',
+                    style: TextStyle(color: RMColors.textHint, fontSize: 11),
                   ),
-                  if (_mediaFile != null) const SizedBox(height: 14),
+                  SizedBox(height: 14),
+
+                  // Media preview list
+                  AnimatedSwitcher(
+                    duration: Duration(milliseconds: 250),
+                    child: _mediaList.isEmpty
+                        ? SizedBox.shrink()
+                        : _buildMediaPreviewList(),
+                  ),
+                  if (_mediaList.isNotEmpty) SizedBox(height: 14),
 
                   // Caption
                   TextField(
                     controller: _captionCtrl,
                     maxLength: 500,
                     maxLines: 4,
-                    style: const TextStyle(color: RMColors.textPrimary),
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: RMColors.textPrimary),
+                    decoration: InputDecoration(
                       labelText: 'What do you want to leave here?',
                       counterStyle: TextStyle(color: RMColors.textHint),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
 
                   // Unlock radius
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Unlock radius',
+                      Text('Unlock radius',
                           style: TextStyle(
                               color: RMColors.textSecondary, fontSize: 13)),
                       Container(
-                        padding: const EdgeInsets.symmetric(
+                        padding: EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: RMColors.primaryDim,
@@ -279,7 +366,7 @@ class _CreateDropScreenState extends State<CreateDropScreen>
                         ),
                         child: Text(
                           '${_radius}m',
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: RMColors.primary,
                               fontWeight: FontWeight.w700,
                               fontSize: 13),
@@ -302,13 +389,13 @@ class _CreateDropScreenState extends State<CreateDropScreen>
                       onChanged: (v) => setState(() => _radius = v.round()),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
 
                   // Visibility
-                  const Text('Who can see this?',
+                  Text('Who can see this?',
                       style: TextStyle(
                           color: RMColors.textSecondary, fontSize: 13)),
-                  const SizedBox(height: 10),
+                  SizedBox(height: 10),
                   Row(
                     children: [
                       _VisibilityChip(
@@ -318,7 +405,7 @@ class _CreateDropScreenState extends State<CreateDropScreen>
                         onTap: () =>
                             setState(() => _visibility = 'public'),
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: 10),
                       _VisibilityChip(
                         label: 'Private',
                         icon: Icons.lock_rounded,
@@ -329,13 +416,22 @@ class _CreateDropScreenState extends State<CreateDropScreen>
                     ],
                   ),
 
+                  // Allow download
+                  if (_mediaList.isNotEmpty) ...[
+                    SizedBox(height: 20),
+                    _DownloadToggle(
+                      value: _allowDownload,
+                      onChanged: (v) => setState(() => _allowDownload = v),
+                    ),
+                  ],
+
                   // Allowlist
                   if (_visibility == 'private') ...[
-                    const SizedBox(height: 20),
-                    const Text('Who can unlock this?',
+                    SizedBox(height: 20),
+                    Text('Who can unlock this?',
                         style: TextStyle(
                             color: RMColors.textSecondary, fontSize: 13)),
-                    const SizedBox(height: 10),
+                    SizedBox(height: 10),
                     if (_allowedUsers.isNotEmpty)
                       Wrap(
                         spacing: 8,
@@ -349,14 +445,14 @@ class _CreateDropScreenState extends State<CreateDropScreen>
                                 ))
                             .toList(),
                       ),
-                    const SizedBox(height: 10),
+                    SizedBox(height: 10),
                     TextField(
                       controller: _userSearchCtrl,
-                      style: const TextStyle(color: RMColors.textPrimary),
+                      style: TextStyle(color: RMColors.textPrimary),
                       decoration: InputDecoration(
                         labelText: 'Search by username',
                         suffixIcon: _searchingUsers
-                            ? const Padding(
+                            ? Padding(
                                 padding: EdgeInsets.all(12),
                                 child: SizedBox(
                                   height: 16,
@@ -372,7 +468,7 @@ class _CreateDropScreenState extends State<CreateDropScreen>
                     ),
                     if (_userSuggestions.isNotEmpty)
                       Container(
-                        margin: const EdgeInsets.only(top: 4),
+                        margin: EdgeInsets.only(top: 4),
                         decoration: BoxDecoration(
                           color: RMColors.surfaceAlt,
                           borderRadius: BorderRadius.circular(12),
@@ -380,26 +476,26 @@ class _CreateDropScreenState extends State<CreateDropScreen>
                         ),
                         child: ListView.separated(
                           shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
+                          physics: NeverScrollableScrollPhysics(),
                           itemCount: _userSuggestions.length,
-                          separatorBuilder: (_, __) => const Divider(
+                          separatorBuilder: (_, __) => Divider(
                               height: 1, color: RMColors.border),
                           itemBuilder: (context, i) {
                             final u = _userSuggestions[i];
                             return ListTile(
                               dense: true,
-                              leading: const CircleAvatar(
+                              leading: CircleAvatar(
                                 radius: 16,
                                 backgroundColor: RMColors.primaryDim,
                                 child: Icon(Icons.person_rounded,
                                     size: 16, color: RMColors.primary),
                               ),
                               title: Text('@${u['username']}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: RMColors.textPrimary,
                                       fontSize: 14)),
                               subtitle: Text(u['display_name'] ?? '',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: RMColors.textSecondary,
                                       fontSize: 12)),
                               onTap: () =>
@@ -410,23 +506,23 @@ class _CreateDropScreenState extends State<CreateDropScreen>
                       ),
                   ],
 
-                  const SizedBox(height: 24),
+                  SizedBox(height: 24),
                   if (_error != null)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
+                      padding: EdgeInsets.only(bottom: 12),
                       child: Text(_error!,
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: RMColors.danger, fontSize: 13)),
                     ),
                   FilledButton(
                     onPressed: _saving ? null : _save,
                     child: _saving
-                        ? const SizedBox(
+                        ? SizedBox(
                             height: 20,
                             width: 20,
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.white))
-                        : const Text('Drop it here'),
+                        : Text('Drop it here'),
                   ),
                 ],
               ),
@@ -436,7 +532,7 @@ class _CreateDropScreenState extends State<CreateDropScreen>
 
         if (_showTutorial)
           TutorialOverlay(
-            steps: const [
+            steps: [
               TutorialStep(
                 icon: Icons.add_location_alt_rounded,
                 title: 'Create a Drop',
@@ -462,17 +558,169 @@ class _CreateDropScreenState extends State<CreateDropScreen>
     );
   }
 
-  Widget _buildMediaPreview() {
-    if (_mediaType == 'photo') {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: Image.file(_mediaFile!, height: 180, fit: BoxFit.cover,
-            key: const ValueKey('photo')),
+  Widget _buildMediaPreviewList() {
+    return Column(
+      key: ValueKey('media-list'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < _mediaList.length; i++) ...[
+          if (i > 0) SizedBox(height: 8),
+          _MediaPreviewTile(
+            media: _mediaList[i],
+            onRemove: () => _removeMedia(i),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _MediaPreviewTile extends StatelessWidget {
+  final _PickedMedia media;
+  final VoidCallback onRemove;
+
+  _MediaPreviewTile({required this.media, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    final sizeLabel = formatFileSize(media.sizeBytes);
+    if (media.mediaType == 'photo') {
+      return Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: RMColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Image.file(media.file, height: 140, width: double.infinity, fit: BoxFit.cover),
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: _PreviewCaptionBar(
+                fileName: media.fileName,
+                sizeLabel: sizeLabel,
+                onRemove: onRemove,
+                dark: true,
+              ),
+            ),
+          ],
+        ),
       );
     }
+
     return Container(
-      key: ValueKey(_mediaType),
-      height: 80,
+      height: 64,
+      decoration: BoxDecoration(
+        color: RMColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: RMColors.border),
+      ),
+      padding: EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          Icon(
+            media.mediaType == 'video'
+                ? Icons.videocam_rounded
+                : Icons.insert_drive_file_rounded,
+            color: RMColors.primary,
+            size: 24,
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  media.fileName,
+                  style: TextStyle(
+                      color: RMColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (sizeLabel != null)
+                  Text(sizeLabel,
+                      style: TextStyle(
+                          color: RMColors.textSecondary, fontSize: 11)),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close_rounded,
+                color: RMColors.textSecondary, size: 18),
+            onPressed: onRemove,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewCaptionBar extends StatelessWidget {
+  final String fileName;
+  final String? sizeLabel;
+  final VoidCallback onRemove;
+  final bool dark;
+
+  _PreviewCaptionBar({
+    required this.fileName,
+    required this.sizeLabel,
+    required this.onRemove,
+    this.dark = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(fileName,
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                if (sizeLabel != null)
+                  Text(sizeLabel!,
+                      style: TextStyle(
+                          color: Colors.white70, fontSize: 10)),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: onRemove,
+            child: Icon(Icons.close_rounded, color: Colors.white, size: 16),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DownloadToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  _DownloadToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: RMColors.surfaceAlt,
         borderRadius: BorderRadius.circular(14),
@@ -480,28 +728,32 @@ class _CreateDropScreenState extends State<CreateDropScreen>
       ),
       child: Row(
         children: [
-          const SizedBox(width: 16),
           Icon(
-            _mediaType == 'video'
-                ? Icons.videocam_rounded
-                : Icons.insert_drive_file_rounded,
-            color: RMColors.primary,
-            size: 28,
+            value ? Icons.download_rounded : Icons.download_for_offline_outlined,
+            size: 18,
+            color: value ? RMColors.primary : RMColors.textSecondary,
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 10),
           Expanded(
-            child: Text(
-              _fileName,
-              style: const TextStyle(
-                  color: RMColors.textPrimary, fontSize: 13),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Allow downloads',
+                    style: TextStyle(
+                        color: RMColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+                Text('Let people save the attached files to their device',
+                    style: TextStyle(
+                        color: RMColors.textSecondary, fontSize: 11)),
+              ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.close_rounded,
-                color: RMColors.textSecondary, size: 18),
-            onPressed: () =>
-                setState(() { _mediaFile = null; _fileName = ''; }),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: RMColors.primary,
           ),
         ],
       ),
@@ -514,12 +766,14 @@ class _MediaPicker extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback? onCameraTap;
 
-  const _MediaPicker({
+  _MediaPicker({
     required this.icon,
     required this.label,
     required this.selected,
     required this.onTap,
+    this.onCameraTap,
   });
 
   @override
@@ -527,9 +781,10 @@ class _MediaPicker extends StatelessWidget {
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
+        onLongPress: onCameraTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          duration: Duration(milliseconds: 200),
+          padding: EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
             color: selected ? RMColors.primaryDim : RMColors.surfaceAlt,
             borderRadius: BorderRadius.circular(14),
@@ -543,7 +798,7 @@ class _MediaPicker extends StatelessWidget {
               Icon(icon,
                   color: selected ? RMColors.primary : RMColors.textHint,
                   size: 22),
-              const SizedBox(height: 5),
+              SizedBox(height: 5),
               Text(label,
                   style: TextStyle(
                       color: selected
@@ -565,7 +820,7 @@ class _VisibilityChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _VisibilityChip({
+  _VisibilityChip({
     required this.label,
     required this.icon,
     required this.selected,
@@ -577,8 +832,8 @@ class _VisibilityChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        duration: Duration(milliseconds: 200),
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: selected ? RMColors.primaryDim : RMColors.surfaceAlt,
           borderRadius: BorderRadius.circular(12),
@@ -594,7 +849,7 @@ class _VisibilityChip extends StatelessWidget {
                 size: 16,
                 color:
                     selected ? RMColors.primary : RMColors.textSecondary),
-            const SizedBox(width: 6),
+            SizedBox(width: 6),
             Text(label,
                 style: TextStyle(
                     color: selected

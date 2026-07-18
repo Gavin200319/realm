@@ -4,7 +4,7 @@ import '../services/supabase_service.dart';
 
 class ReactionsScreen extends StatefulWidget {
   final String dropId;
-  const ReactionsScreen({super.key, required this.dropId});
+  ReactionsScreen({super.key, required this.dropId});
 
   @override
   State<ReactionsScreen> createState() => _ReactionsScreenState();
@@ -94,14 +94,14 @@ class _ReactionsScreenState extends State<ReactionsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Reactions')),
+      appBar: AppBar(title: Text('Reactions')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator())
           : Column(
               children: [
                 // Like bar
                 Padding(
-                  padding: const EdgeInsets.symmetric(
+                  padding: EdgeInsets.symmetric(
                       horizontal: 16, vertical: 12),
                   child: Row(
                     children: [
@@ -116,15 +116,15 @@ class _ReactionsScreenState extends State<ReactionsScreen> {
                               color: _hasLiked ? Colors.red : Colors.grey,
                               size: 28,
                             ),
-                            const SizedBox(width: 6),
+                            SizedBox(width: 6),
                             Text(
                               '$_likeCount',
-                              style: const TextStyle(fontSize: 16),
+                              style: TextStyle(fontSize: 16),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: 16),
                       Text(
                         '${_comments.length} comments',
                         style: Theme.of(context).textTheme.bodySmall,
@@ -132,17 +132,17 @@ class _ReactionsScreenState extends State<ReactionsScreen> {
                     ],
                   ),
                 ),
-                const Divider(height: 1),
+                Divider(height: 1),
                 // Comments list
                 Expanded(
                   child: _comments.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Text('No comments yet — be the first.'))
                       : ListView.separated(
-                          padding: const EdgeInsets.all(16),
+                          padding: EdgeInsets.all(16),
                           itemCount: _comments.length,
                           separatorBuilder: (_, __) =>
-                              const SizedBox(height: 12),
+                              SizedBox(height: 12),
                           itemBuilder: (context, i) {
                             final c = _comments[i];
                             final createdAt = DateTime.tryParse(
@@ -151,11 +151,11 @@ class _ReactionsScreenState extends State<ReactionsScreen> {
                             return Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const CircleAvatar(
+                                CircleAvatar(
                                   radius: 16,
                                   child: Icon(Icons.person, size: 16),
                                 ),
-                                const SizedBox(width: 10),
+                                SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
@@ -167,10 +167,10 @@ class _ReactionsScreenState extends State<ReactionsScreen> {
                                             c['profiles']?['username']
                                                     as String? ??
                                                 'unknown',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                                 fontWeight: FontWeight.w600),
                                           ),
-                                          const SizedBox(width: 8),
+                                          SizedBox(width: 8),
                                           Text(
                                             DateFormat('MMM d, h:mm a')
                                                 .format(createdAt),
@@ -180,7 +180,7 @@ class _ReactionsScreenState extends State<ReactionsScreen> {
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 2),
+                                      SizedBox(height: 2),
                                       Text(c['content'] as String? ?? ''),
                                     ],
                                   ),
@@ -193,13 +193,13 @@ class _ReactionsScreenState extends State<ReactionsScreen> {
                 // Comment input
                 SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                    padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
                     child: Row(
                       children: [
                         Expanded(
                           child: TextField(
                             controller: _commentCtrl,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               hintText: 'Add a comment...',
                               border: OutlineInputBorder(),
                               isDense: true,
@@ -209,16 +209,16 @@ class _ReactionsScreenState extends State<ReactionsScreen> {
                             onSubmitted: (_) => _postComment(),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        SizedBox(width: 8),
                         IconButton.filled(
                           onPressed: _posting ? null : _postComment,
                           icon: _posting
-                              ? const SizedBox(
+                              ? SizedBox(
                                   height: 18,
                                   width: 18,
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2))
-                              : const Icon(Icons.send),
+                              : Icon(Icons.send),
                         ),
                       ],
                     ),
