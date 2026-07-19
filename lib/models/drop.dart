@@ -100,7 +100,7 @@ class Drop {
     required this.mediaType,
     this.mediaSizeBytes,
     this.allowDownload = true,
-    this.mediaItems = [],
+    this.mediaItems = const [],
     required this.visibility,
     required this.unlockRadiusM,
     required this.distanceM,

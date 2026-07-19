@@ -115,7 +115,7 @@ class SupabaseService {
     String? mediaType,
     int? mediaSizeBytes,
     bool allowDownload = true,
-    List<Map<String, dynamic>> mediaItems = [],
+    List<Map<String, dynamic>> mediaItems = const [],
     int unlockRadiusM = 50,
     String visibility = 'public',
   }) async {

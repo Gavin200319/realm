@@ -85,7 +85,7 @@ class BlurUpImage extends StatelessWidget {
     required this.url,
     this.height,
     this.fit = BoxFit.cover,
-    this.borderRadius = BorderRadius.all(Radius.circular(14)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(14)),
     this.cacheWidth,
   });
 
