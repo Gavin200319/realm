@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' as geo;
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/drop.dart';
 import '../services/location_service.dart';
 import '../services/supabase_service.dart';
@@ -35,6 +36,7 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   late Animation<double> _fabScale;
   DateTime? _lastFetchAt;
   bool _fetchInFlight = false;
+  String? _avatarUrl;
 
   @override
   void initState() {
@@ -47,6 +49,24 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     _loadCachedDrops();
     _initLocation();
     _checkTutorial();
+    _loadAvatar();
+  }
+
+  /// Own avatar for the profile shortcut top-right — loaded once here
+  /// and refreshed after returning from the profile screen, since
+  /// that's the only place it can change (see _openProfile).
+  Future<void> _loadAvatar() async {
+    final user = SupabaseService.instance.currentUser;
+    if (user == null) return;
+    final stats = await SupabaseService.instance.fetchProfileStats(user.id);
+    if (mounted) setState(() => _avatarUrl = stats?.avatarUrl);
+  }
+
+  Future<void> _openProfile() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ProfileScreen()),
+    );
+    _loadAvatar();
   }
 
   /// Shows whatever drops were cached last time immediately, before
@@ -239,10 +259,18 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                 onPressed: _openUserSearch,
               ),
               IconButton(
-                icon: Icon(Icons.person_outline_rounded),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => ProfileScreen()),
+                icon: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: RMColors.primaryDim,
+                  backgroundImage: _avatarUrl != null
+                      ? CachedNetworkImageProvider(_avatarUrl!)
+                      : null,
+                  child: _avatarUrl == null
+                      ? Icon(Icons.person_rounded,
+                          size: 16, color: RMColors.primary)
+                      : null,
                 ),
+                onPressed: _openProfile,
               ),
             ],
           ),
