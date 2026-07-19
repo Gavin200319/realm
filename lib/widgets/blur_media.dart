@@ -80,6 +80,13 @@ class BlurUpImage extends StatelessWidget {
   /// never render anywhere near full size (e.g. feed cards). Leave
   /// null for full-resolution decoding (detail screens, galleries).
   final int? cacheWidth;
+  /// When true (and [fit] is BoxFit.contain), the empty space left by
+  /// showing the full, uncropped image is filled with a blurred,
+  /// darkened copy of the same image rather than a flat background —
+  /// so every card is the same size without ever hiding part of the
+  /// photo or video thumbnail, and the letterbox bars still look
+  /// intentional instead of like empty gaps.
+  final bool letterboxFill;
 
   BlurUpImage({
     super.key,
@@ -88,51 +95,74 @@ class BlurUpImage extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.borderRadius = const BorderRadius.all(Radius.circular(14)),
     this.cacheWidth,
+    this.letterboxFill = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final foreground = CachedNetworkImage(
+      imageUrl: url,
+      fit: fit,
+      memCacheWidth: cacheWidth,
+      fadeInDuration: Duration(milliseconds: 400),
+      progressIndicatorBuilder: (context, url, progress) => Stack(
+        fit: StackFit.expand,
+        children: [
+          BlurPlaceholder(height: height, icon: Icons.image_rounded),
+          if (progress.progress != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 10),
+                child: SizedBox(
+                  width: 80,
+                  child: LinearProgressIndicator(
+                    value: progress.progress,
+                    minHeight: 3,
+                    backgroundColor: Colors.black26,
+                    valueColor: AlwaysStoppedAnimation(RMColors.primary),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+      errorWidget: (context, url, error) => Container(
+        height: height,
+        color: RMColors.surfaceAlt,
+        child: Center(
+          child: Icon(Icons.broken_image_rounded,
+              color: RMColors.textHint, size: 32),
+        ),
+      ),
+    );
+
     return ClipRRect(
       borderRadius: borderRadius,
       child: SizedBox(
         height: height,
         width: double.infinity,
-        child: CachedNetworkImage(
-          imageUrl: url,
-          fit: fit,
-          memCacheWidth: cacheWidth,
-          fadeInDuration: Duration(milliseconds: 400),
-          progressIndicatorBuilder: (context, url, progress) => Stack(
-            fit: StackFit.expand,
-            children: [
-              BlurPlaceholder(height: height, icon: Icons.image_rounded),
-              if (progress.progress != null)
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: 10),
-                    child: SizedBox(
-                      width: 80,
-                      child: LinearProgressIndicator(
-                        value: progress.progress,
-                        minHeight: 3,
-                        backgroundColor: Colors.black26,
-                        valueColor: AlwaysStoppedAnimation(RMColors.primary),
-                      ),
+        child: letterboxFill
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Decorative backdrop only — small mem-cache width
+                  // since it's blurred into a soft smear anyway, and
+                  // its own load/error states don't matter, the
+                  // foreground image above carries those.
+                  ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                    child: CachedNetworkImage(
+                      imageUrl: url,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 120,
                     ),
                   ),
-                ),
-            ],
-          ),
-          errorWidget: (context, url, error) => Container(
-            height: height,
-            color: RMColors.surfaceAlt,
-            child: Center(
-              child: Icon(Icons.broken_image_rounded,
-                  color: RMColors.textHint, size: 32),
-            ),
-          ),
-        ),
+                  Container(color: Colors.black.withOpacity(0.28)),
+                  Center(child: foreground),
+                ],
+              )
+            : foreground,
       ),
     );
   }

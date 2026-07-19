@@ -48,6 +48,12 @@ class MediaThumbnailPreview extends StatelessWidget {
           url: media.url,
           height: height,
           borderRadius: borderRadius,
+          // Every card shows the full photo, uncropped — a portrait
+          // shot next to a landscape one still gets the exact same
+          // card height, just with the difference absorbed as a
+          // blurred letterbox instead of chopping off part of either.
+          fit: BoxFit.contain,
+          letterboxFill: true,
           // Feed cards never render wider than the screen, so there's
           // no reason to decode a multi-megapixel photo at full
           // resolution just to show a ~350dp-wide card.
@@ -67,13 +73,15 @@ class MediaThumbnailPreview extends StatelessWidget {
                         url: media.thumbUrl!,
                         height: height,
                         borderRadius: BorderRadius.zero,
+                        fit: BoxFit.contain,
+                        letterboxFill: true,
                         cacheWidth: 900,
                       ),
-                      Container(
-                        color: Colors.black26,
+                      IgnorePointer(
                         child: Center(
                           child: Icon(Icons.play_circle_fill_rounded,
-                              color: Colors.white, size: 40),
+                              color: Colors.white.withOpacity(0.92),
+                              size: 40),
                         ),
                       ),
                     ],

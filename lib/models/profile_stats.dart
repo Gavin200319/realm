@@ -4,6 +4,7 @@ class ProfileStats {
   final String? avatarUrl;
   final int dropsCreated;
   final int dropsUnlocked;
+  final int followerCount;
 
   ProfileStats({
     required this.userId,
@@ -11,6 +12,7 @@ class ProfileStats {
     this.avatarUrl,
     required this.dropsCreated,
     required this.dropsUnlocked,
+    this.followerCount = 0,
   });
 
   factory ProfileStats.fromMap(Map<String, dynamic> map) {
@@ -20,6 +22,7 @@ class ProfileStats {
       avatarUrl: map['avatar_url'] as String?,
       dropsCreated: (map['drops_created'] as num).toInt(),
       dropsUnlocked: (map['drops_unlocked'] as num).toInt(),
+      followerCount: (map['follower_count'] as num?)?.toInt() ?? 0,
     );
   }
 }

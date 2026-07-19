@@ -7,6 +7,8 @@ import '../services/data_saver_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/rm_theme.dart';
 import '../widgets/location_autocomplete_field.dart';
+import 'followers_screen.dart';
+import 'my_drops_gallery_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   ProfileScreen({super.key});
@@ -240,9 +242,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Expanded(
                         child: _StatCard(
-                          icon: Icons.lock_open_rounded,
-                          label: 'Visited',
-                          value: '${_stats?.dropsUnlocked ?? 0}',
+                          icon: Icons.people_alt_rounded,
+                          label: 'Followers',
+                          value: '${_stats?.followerCount ?? 0}',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => const FollowersScreen()),
+                          ),
                         ),
                       ),
                       SizedBox(width: 12),
@@ -251,6 +257,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           icon: Icons.add_location_alt_rounded,
                           label: 'Dropped',
                           value: '${_stats?.dropsCreated ?? 0}',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => const MyDropsGalleryScreen()),
+                          ),
                         ),
                       ),
                     ],
@@ -747,35 +757,44 @@ class _StatCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+  final VoidCallback? onTap;
 
   _StatCard({
     required this.icon,
     required this.label,
     required this.value,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: RMColors.surface,
+    return Material(
+      color: RMColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: RMColors.border),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: RMColors.primary, size: 22),
-          SizedBox(height: 8),
-          Text(value,
-              style: TextStyle(
-                  color: RMColors.textPrimary,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800)),
-          Text(label,
-              style: TextStyle(
-                  color: RMColors.textSecondary, fontSize: 11)),
-        ],
+        onTap: onTap,
+        child: Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: RMColors.border),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: RMColors.primary, size: 22),
+              SizedBox(height: 8),
+              Text(value,
+                  style: TextStyle(
+                      color: RMColors.textPrimary,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800)),
+              Text(label,
+                  style: TextStyle(
+                      color: RMColors.textSecondary, fontSize: 11)),
+            ],
+          ),
+        ),
       ),
     );
   }

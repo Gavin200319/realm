@@ -252,6 +252,24 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  /// Everyone who follows the current user — for the "Followers" list
+  /// on the current user's own profile. Unlike [fetchMutualFollows],
+  /// this doesn't require the current user to follow back.
+  Future<List<Map<String, dynamic>>> fetchFollowers() async {
+    final rows = await _client.rpc('get_followers');
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
+  /// The current user's own drops, newest first, for the "Dropped"
+  /// gallery on their profile. Always reports each drop as unlocked —
+  /// you never need to walk back to your own drop to see it.
+  Future<List<Drop>> fetchMyDrops() async {
+    final rows = await _client.rpc('get_my_drops');
+    return (rows as List)
+        .map((row) => Drop.fromMap(row as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Everyone the current user follows who also follows them back —
   /// used to show a "Friends" list when starting a new chat, so people
   /// don't have to type a username for someone they already talk to.

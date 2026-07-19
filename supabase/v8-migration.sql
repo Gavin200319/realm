@@ -13,7 +13,15 @@ ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS allow_discovery boolean NOT NULL DEFAULT true;
 
 -- 2. Follows -----------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.follows (
+-- If a `follows` table already exists from an earlier partial run (or a
+-- manually-created placeholder) with a different column layout, plain
+-- CREATE TABLE IF NOT EXISTS silently no-ops and every statement below
+-- that references follower_id/following_id then fails. Since this is a
+-- brand-new feature (no migration before v8 ever created this table),
+-- there's no real data to lose — drop and recreate cleanly.
+DROP TABLE IF EXISTS public.follows CASCADE;
+
+CREATE TABLE public.follows (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   follower_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   following_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,

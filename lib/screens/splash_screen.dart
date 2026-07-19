@@ -1,34 +1,18 @@
 import 'package:flutter/material.dart';
 import '../theme/rm_theme.dart';
+import '../widgets/brand_loader.dart';
 
 /// The app's boot screen — shown from the moment Flutter takes over
 /// drawing (replacing the plain native launch screen as fast as
 /// possible) until env vars, theme/prefs, and Supabase are ready.
 ///
-/// Deliberately simple: brand mark, wordmark, tagline, and a thin
-/// animated progress bar. No network calls, no async work of its own —
-/// it just renders instantly using [RMColors]' default (dark) palette,
-/// which is available immediately even before [ThemeController.init]
-/// has run.
-class SplashScreen extends StatefulWidget {
+/// Deliberately simple: animated brand mark, wordmark, tagline, and a
+/// thin animated progress bar. No network calls, no async work of its
+/// own — it just renders instantly using [RMColors]' default (dark)
+/// palette, which is available immediately even before
+/// [ThemeController.init] has run.
+class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
-
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulseCtrl = AnimationController(
-    vsync: this,
-    duration: Duration(milliseconds: 1800),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _pulseCtrl.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,37 +22,10 @@ class _SplashScreenState extends State<SplashScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Brand mark — a soft glowing ring around a location pin,
-            // echoing the "world lights up around you" concept without
-            // needing a shipped logo asset.
-            AnimatedBuilder(
-              animation: _pulseCtrl,
-              builder: (context, child) {
-                final glow = 0.35 + (_pulseCtrl.value * 0.25);
-                return Container(
-                  width: 92,
-                  height: 92,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [RMColors.primary, RMColors.primaryDim],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: RMColors.primary.withOpacity(glow),
-                        blurRadius: 32,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: child,
-                );
-              },
-              child: Icon(Icons.travel_explore_rounded,
-                  color: Colors.white, size: 46),
-            ),
+            // Brand mark — an orbiting glow ring around a pulsing
+            // location/globe orb, echoing the "world lights up around
+            // you" concept without needing a shipped logo asset.
+            BrandLoader(size: 92),
             SizedBox(height: 28),
             Text(
               'REALITY MERGE',
