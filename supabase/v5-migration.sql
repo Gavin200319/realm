@@ -41,13 +41,17 @@ CREATE POLICY "Users can delete their own avatar"
   );
 
 -- 3. Update profile_stats view to carry avatar_url --------------------------
+-- avatar_url is appended at the END of the column list (not inserted after
+-- username) because CREATE OR REPLACE VIEW can only add trailing columns —
+-- it errors if a replacement changes the position of an existing column,
+-- since Postgres reads that as an implicit rename.
 CREATE OR REPLACE VIEW public.profile_stats AS
 SELECT
   p.id AS user_id,
   p.username,
-  p.avatar_url,
   count(DISTINCT d.id) AS drops_created,
-  count(DISTINCT du.drop_id) AS drops_unlocked
+  count(DISTINCT du.drop_id) AS drops_unlocked,
+  p.avatar_url
 FROM public.profiles p
 LEFT JOIN public.drops d ON d.creator_id = p.id
 LEFT JOIN public.drop_unlocks du ON du.user_id = p.id

@@ -5,7 +5,7 @@ import 'compass_screen.dart';
 import 'chats_screen.dart';
 
 class HomeShell extends StatefulWidget {
-  HomeShell({super.key});
+  const HomeShell({super.key});
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -14,19 +14,41 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _currentIndex = 0;
 
+  // Keys give us a handle onto each tab's State so we can force a fresh
+  // fetch every time that tab is (re)selected — see _onDestinationSelected.
+  // An IndexedStack keeps every tab's widget alive in the background, but
+  // "alive" isn't the same as "up to date": a tab whose first load raced
+  // location/auth and lost, or whose data is just stale from sitting
+  // untouched, would otherwise stay that way for the rest of the session
+  // even after switching away and back.
+  final _feedKey = GlobalKey<FeedScreenState>();
+  final _compassKey = GlobalKey<CompassScreenState>();
+
+  late final _screens = [
+    FeedScreen(key: _feedKey),
+    CompassScreen(key: _compassKey),
+    ChatsScreen(),
+  ];
+
+  void _onDestinationSelected(int index) {
+    setState(() => _currentIndex = index);
+    switch (index) {
+      case 0:
+        _feedKey.currentState?.refresh();
+        break;
+      case 1:
+        _compassKey.currentState?.refresh();
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final screens = [
-      FeedScreen(),
-      CompassScreen(),
-      ChatsScreen(),
-    ];
-
     return Scaffold(
       backgroundColor: RMColors.background,
       body: IndexedStack(
         index: _currentIndex,
-        children: screens,
+        children: _screens,
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -34,7 +56,7 @@ class _HomeShellState extends State<HomeShell> {
         ),
         child: NavigationBar(
           selectedIndex: _currentIndex,
-          onDestinationSelected: (i) => setState(() => _currentIndex = i),
+          onDestinationSelected: _onDestinationSelected,
           backgroundColor: RMColors.surface,
           indicatorColor: RMColors.primaryDim,
           height: 64,

@@ -7,19 +7,23 @@ import '../models/drop.dart';
 import '../services/location_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/rm_theme.dart';
+import '../widgets/drop_card.dart';
 import 'drop_detail_screen.dart';
 
-/// A simple magnetometer-based compass that also points toward the
-/// nearest locked drop, so it can stand in for "walk this way" guidance
-/// now that the dedicated AR/Map tabs are gone.
+/// A magnetometer-based compass that also points toward — and lists —
+/// nearby locked drops, so it can stand in for "walk this way" guidance
+/// now that the dedicated AR/Map tabs are gone. Cards below the rose use
+/// the same [DropCard] component as the Explore feed, so a drop looks
+/// and behaves identically in either tab (same location badge, same
+/// unlock affordance, same photo/video thumbnail handling).
 class CompassScreen extends StatefulWidget {
-  CompassScreen({super.key});
+  const CompassScreen({super.key});
 
   @override
-  State<CompassScreen> createState() => _CompassScreenState();
+  State<CompassScreen> createState() => CompassScreenState();
 }
 
-class _CompassScreenState extends State<CompassScreen> {
+class CompassScreenState extends State<CompassScreen> {
   StreamSubscription<MagnetometerEvent>? _compassSub;
   StreamSubscription<geo.Position>? _positionSub;
   double _heading = 0;
@@ -31,6 +35,10 @@ class _CompassScreenState extends State<CompassScreen> {
   @override
   void initState() {
     super.initState();
+    _compassSub = magnetometerEventStream().listen((event) {
+      final heading = math.atan2(event.y, event.x) * (180 / math.pi);
+      if (mounted) setState(() => _heading = (heading + 360) % 360);
+    });
     _init();
   }
 
@@ -41,19 +49,26 @@ class _CompassScreenState extends State<CompassScreen> {
     super.dispose();
   }
 
-  Future<void> _init() async {
-    _compassSub = magnetometerEventStream().listen((event) {
-      final heading = math.atan2(event.y, event.x) * (180 / math.pi);
-      if (mounted) setState(() => _heading = (heading + 360) % 360);
-    });
+  /// Called on first load, on pull-to-refresh, and by [HomeShell] every
+  /// time this tab is selected (including switching back to it). Doing
+  /// the fetch again on every visit — rather than relying solely on the
+  /// initial `initState` call plus the position stream — means a failed
+  /// first attempt (permission dialog still pending, no signal yet,
+  /// cold-start race with auth) doesn't leave the tab permanently empty
+  /// for the rest of the session.
+  Future<void> refresh() => _init();
 
+  Future<void> _init() async {
+    setState(() { _loading = true; _error = null; });
     try {
-      final position =
+      // Reuse an already-running position stream rather than starting a
+      // second one on every refresh.
+      final position = _position ??
           await LocationService.instance.getCurrentPosition();
       if (mounted) setState(() => _position = position);
       await _fetchNearby(position);
 
-      _positionSub = LocationService.instance.watchPosition().listen((pos) {
+      _positionSub ??= LocationService.instance.watchPosition().listen((pos) {
         if (mounted) setState(() => _position = pos);
         _fetchNearby(pos);
       });
@@ -75,6 +90,20 @@ class _CompassScreenState extends State<CompassScreen> {
             _nearbyLocked = drops.where((d) => !d.isUnlocked).toList());
       }
     } catch (_) {}
+  }
+
+  Future<void> _openDrop(Drop drop) async {
+    if (_position == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DropDetailScreen(
+          drop: drop,
+          currentLat: _position!.latitude,
+          currentLng: _position!.longitude,
+        ),
+      ),
+    );
+    if (_position != null) await _fetchNearby(_position!);
   }
 
   /// Bearing from the current position to a target lat/lng, in degrees
@@ -112,72 +141,127 @@ class _CompassScreenState extends State<CompassScreen> {
     return Scaffold(
       backgroundColor: RMColors.background,
       appBar: AppBar(
-        title: Text('Compass'),
         backgroundColor: RMColors.background,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Compass'),
+            if (!_loading && _position != null)
+              Text(
+                '${_nearbyLocked.length} locked nearby',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+          ],
+        ),
       ),
       body: _loading
-          ? Center(child: CircularProgressIndicator(color: RMColors.primary))
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: RMColors.primary),
+                  SizedBox(height: 16),
+                  Text('Finding your location…',
+                      style: TextStyle(color: RMColors.textSecondary)),
+                ],
+              ),
+            )
           : SafeArea(
               child: Column(
                 children: [
                   if (_error != null)
                     Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Text(_error!,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: RMColors.textSecondary)),
-                    ),
-                  Expanded(
-                    child: Center(
-                      child: _CompassRose(
-                        heading: _heading,
-                        targetBearing: targetBearing,
+                      padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
+                      child: Column(
+                        children: [
+                          Text(_error!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: RMColors.textSecondary)),
+                          SizedBox(height: 12),
+                          OutlinedButton(
+                              onPressed: refresh, child: Text('Try again')),
+                        ],
                       ),
+                    ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(24, 20, 24, 8),
+                    child: _CompassRose(
+                      heading: _heading,
+                      targetBearing: targetBearing,
                     ),
                   ),
                   Padding(
-                    padding: EdgeInsets.fromLTRB(24, 0, 24, 28),
+                    padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
                     child: target == null
                         ? Text(
                             'No locked drops nearby right now.',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: RMColors.textSecondary),
                           )
-                        : GestureDetector(
-                            onTap: () {
-                              if (_position == null) return;
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => DropDetailScreen(
-                                    drop: target,
-                                    currentLat: _position!.latitude,
-                                    currentLng: _position!.longitude,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: Column(
-                              children: [
-                                Text(
-                                  'Nearest locked drop',
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  target.distanceLabel,
-                                  style: TextStyle(
-                                    color: RMColors.primary,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
+                        : Text(
+                            'Nearest locked drop · ${target.distanceLabel}',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: RMColors.primary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
+                  ),
+                  Divider(color: RMColors.border, height: 1),
+                  Expanded(
+                    child: RefreshIndicator(
+                      color: RMColors.primary,
+                      backgroundColor: RMColors.surface,
+                      onRefresh: refresh,
+                      child: _buildList(),
+                    ),
                   ),
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildList() {
+    if (_nearbyLocked.isEmpty) {
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.explore_off_rounded,
+                      color: RMColors.textHint, size: 48),
+                  SizedBox(height: 12),
+                  Text('Nothing locked nearby yet.',
+                      style: TextStyle(
+                          color: RMColors.textPrimary,
+                          fontWeight: FontWeight.w600)),
+                  SizedBox(height: 4),
+                  Text('Pull down to check again.',
+                      style: TextStyle(color: RMColors.textSecondary)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      physics: AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
+      itemCount: _nearbyLocked.length,
+      itemBuilder: (context, index) => AnimatedDropCard(
+        key: ValueKey(_nearbyLocked[index].id),
+        drop: _nearbyLocked[index],
+        index: index,
+        onTap: () => _openDrop(_nearbyLocked[index]),
+      ),
     );
   }
 }
@@ -193,7 +277,7 @@ class _CompassRose extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const size = 260.0;
+    const size = 180.0;
     return SizedBox(
       width: size,
       height: size,
@@ -227,7 +311,7 @@ class _CompassRose extends StatelessWidget {
                       child: Align(
                         alignment: Alignment(0, -0.62),
                         child: Icon(Icons.navigation_rounded,
-                            color: RMColors.primary, size: 30),
+                            color: RMColors.primary, size: 26),
                       ),
                     ),
                 ],
@@ -235,7 +319,7 @@ class _CompassRose extends StatelessWidget {
             ),
           ),
           // Fixed "you are here" pointer — always points up (device-forward).
-          Icon(Icons.navigation_rounded, color: RMColors.accent, size: 22),
+          Icon(Icons.navigation_rounded, color: RMColors.accent, size: 20),
         ],
       ),
     );
@@ -251,7 +335,7 @@ class _CompassRose extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-                color: color, fontWeight: FontWeight.w800, fontSize: 16),
+                color: color, fontWeight: FontWeight.w800, fontSize: 14),
           ),
         ),
       ),
