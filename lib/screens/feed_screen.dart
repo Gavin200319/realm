@@ -10,6 +10,7 @@ import '../services/local_cache_service.dart';
 import '../theme/rm_theme.dart';
 import '../widgets/tutorial_overlay.dart';
 import '../widgets/drop_card.dart';
+import '../widgets/status_strip.dart';
 import 'create_drop_screen.dart';
 import 'profile_screen.dart';
 import 'drop_detail_screen.dart';
@@ -37,6 +38,7 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   DateTime? _lastFetchAt;
   bool _fetchInFlight = false;
   String? _avatarUrl;
+  final _statusStripKey = GlobalKey<StatusStripState>();
 
   @override
   void initState() {
@@ -94,6 +96,7 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   /// switching back to it), so the feed never sits on stale data —
   /// same contract as [CompassScreenState.refresh].
   Future<void> refresh() async {
+    _statusStripKey.currentState?.refresh();
     if (_position != null) {
       await _fetchDrops(_position!, force: true);
     } else {
@@ -274,11 +277,19 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
-          body: RefreshIndicator(
-            color: RMColors.primary,
-            backgroundColor: RMColors.surface,
-            onRefresh: _initLocation,
-            child: _buildBody(),
+          body: Column(
+            children: [
+              StatusStrip(key: _statusStripKey),
+              Divider(height: 1, color: RMColors.border),
+              Expanded(
+                child: RefreshIndicator(
+                  color: RMColors.primary,
+                  backgroundColor: RMColors.surface,
+                  onRefresh: _initLocation,
+                  child: _buildBody(),
+                ),
+              ),
+            ],
           ),
           floatingActionButton: ScaleTransition(
             scale: _fabScale,

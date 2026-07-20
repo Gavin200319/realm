@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import '../services/supabase_service.dart';
+import '../services/local_cache_service.dart';
 import '../theme/rm_theme.dart';
 import 'chat_conversation_screen.dart';
 
@@ -13,6 +14,8 @@ class ChatsScreen extends StatefulWidget {
 }
 
 class _ChatsScreenState extends State<ChatsScreen> {
+  static const _cacheKey = 'conversations';
+
   List<Map<String, dynamic>> _conversations = [];
   bool _loading = true;
   String? _error;
@@ -20,16 +23,34 @@ class _ChatsScreenState extends State<ChatsScreen> {
   @override
   void initState() {
     super.initState();
+    _loadCached();
     _load();
   }
 
+  /// Shows whatever conversation list was cached last time immediately
+  /// — no spinner, works with zero connection.
+  Future<void> _loadCached() async {
+    final cached = await LocalCacheService.instance.loadList(_cacheKey);
+    if (cached != null && cached.isNotEmpty && mounted && _conversations.isEmpty) {
+      setState(() {
+        _conversations = cached;
+        _loading = false;
+      });
+    }
+  }
+
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    if (_conversations.isEmpty) {
+      setState(() { _loading = true; _error = null; });
+    }
     try {
       final conversations = await SupabaseService.instance.fetchConversations();
-      if (mounted) setState(() => _conversations = conversations);
+      if (mounted) setState(() { _conversations = conversations; _error = null; });
+      await LocalCacheService.instance.saveList(_cacheKey, conversations);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      // Already showing cached conversations — don't replace them with
+      // an error screen just because the refresh failed offline.
+      if (mounted && _conversations.isEmpty) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -224,12 +245,27 @@ class _ChatsScreenState extends State<ChatsScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      if (createdAt != null)
-                        Text(
-                          DateFormat('MMM d, h:mm a').format(createdAt),
-                          style: TextStyle(
-                              color: RMColors.textHint, fontSize: 10),
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (youSent) ...[
+                            Icon(
+                              Icons.done_all_rounded,
+                              size: 13,
+                              color: c['last_message_read_at'] != null
+                                  ? Color(0xFF4FC3F7)
+                                  : RMColors.textHint,
+                            ),
+                            SizedBox(width: 3),
+                          ],
+                          if (createdAt != null)
+                            Text(
+                              DateFormat('MMM d, h:mm a').format(createdAt),
+                              style: TextStyle(
+                                  color: RMColors.textHint, fontSize: 10),
+                            ),
+                        ],
+                      ),
                       if (unread > 0) ...[
                         SizedBox(height: 4),
                         Container(

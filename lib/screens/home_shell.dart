@@ -26,13 +26,6 @@ class _HomeShellState extends State<HomeShell> {
   final _compassKey = GlobalKey<CompassScreenState>();
   final _flicksKey = GlobalKey<FlicksScreenState>();
 
-  late final _screens = [
-    FeedScreen(key: _feedKey),
-    CompassScreen(key: _compassKey),
-    FlicksScreen(key: _flicksKey),
-    ChatsScreen(),
-  ];
-
   void _onDestinationSelected(int index) {
     setState(() => _currentIndex = index);
     switch (index) {
@@ -54,7 +47,19 @@ class _HomeShellState extends State<HomeShell> {
       backgroundColor: RMColors.background,
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        // IndexedStack builds and keeps ALL of these alive simultaneously,
+        // not just the visible one — that's what makes the tab-preserving
+        // navigation work, but it also means a naive child has no idea
+        // whether it's the one currently on screen. FlicksScreen needs
+        // that signal explicitly (see isActive) so it knows when it's
+        // allowed to actually play video, rather than just going by its
+        // own internal notion of "active page" within its feed.
+        children: [
+          FeedScreen(key: _feedKey),
+          CompassScreen(key: _compassKey),
+          FlicksScreen(key: _flicksKey, isActive: _currentIndex == 2),
+          ChatsScreen(),
+        ],
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(

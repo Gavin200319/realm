@@ -5,6 +5,7 @@ import '../models/drop.dart';
 import '../models/profile_stats.dart';
 import '../models/public_profile.dart';
 import '../models/flick.dart';
+import '../models/status_post.dart';
 import 'local_cache_service.dart';
 
 /// Thin wrapper around the Supabase client. Keeping all Supabase calls
@@ -656,5 +657,121 @@ class SupabaseService {
     final result = await _client
         .rpc('toggle_comment_like', params: {'target_comment_id': commentId});
     return result as bool;
+  }
+
+  // ---------------------------------------------------------------
+  // Status (disappearing photo/video posts — WhatsApp/IG-style,
+  // 12h lifespan)
+  // ---------------------------------------------------------------
+
+  /// The 12h window is really enforced by Postgres — see the
+  /// generated `expires_at` column and its RLS select policy in
+  /// v11-migration.sql — this constant just mirrors it so client-side
+  /// validation (e.g. rejecting an obviously-too-long video) has a
+  /// single source to reference. See also [StatusPost.lifespan] for
+  /// the same window used to render the countdown label.
+  static const statusMaxVideoDurationSeconds = 15;
+
+  /// One row per creator who currently has an active status, ordered
+  /// by the server as "you first, then unseen, then most recent" —
+  /// see fetch_status_feed in v11-migration.sql.
+  Future<List<StatusFeedEntry>> fetchStatusFeed() async {
+    final rows = await _client.rpc('fetch_status_feed');
+    return (rows as List)
+        .map((row) => StatusFeedEntry.fromMap(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// A single creator's active statuses, oldest first — the order a
+  /// story viewer pages through them in.
+  Future<List<StatusPost>> fetchUserStatuses(String creatorId) async {
+    final rows = await _client
+        .rpc('get_user_statuses', params: {'target_user_id': creatorId});
+    return (rows as List)
+        .map((row) => StatusPost.fromMap(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Uploads the status's media to the same `drop-media` bucket used
+  /// by drops and flicks (same per-user folder convention — see
+  /// [uploadDropMedia]), then creates the `statuses` row. The 12h
+  /// clock (see [StatusPost.lifespan]) starts ticking from whatever
+  /// `created_at` the database assigns, not from whenever this future
+  /// happens to resolve on the client.
+  Future<StatusPost> createStatus({
+    required Uint8List mediaBytes,
+    required String mediaType, // 'photo' or 'video'
+    required String extension,
+    String? caption,
+    void Function(double progress)? onProgress,
+  }) async {
+    final user = currentUser;
+    if (user == null) throw Exception('Must be signed in to post a status.');
+
+    final mediaUrl = await uploadDropMedia(
+      bytes: mediaBytes,
+      mediaType: mediaType,
+      extension: extension,
+      onProgress: onProgress,
+    );
+
+    final row = await _client
+        .from('statuses')
+        .insert({
+          'creator_id': user.id,
+          'media_url': mediaUrl,
+          'media_type': mediaType,
+          'caption': caption,
+        })
+        .select('id, created_at')
+        .single();
+
+    final profile = await _client
+        .from('profiles')
+        .select('username, avatar_url')
+        .eq('id', user.id)
+        .single();
+
+    return StatusPost(
+      id: row['id'] as String,
+      creatorId: user.id,
+      creatorUsername: profile['username'] as String? ?? 'unknown',
+      creatorAvatarUrl: profile['avatar_url'] as String?,
+      mediaUrl: mediaUrl,
+      mediaType: mediaType,
+      caption: caption,
+      viewCount: 0,
+      isViewedByMe: true,
+      createdAt: DateTime.parse(row['created_at'] as String),
+    );
+  }
+
+  /// Deletes a status early, before its 12h window is up. RLS means
+  /// this silently affects zero rows if the caller isn't the creator
+  /// (same caveat as [deleteDrop]).
+  Future<void> deleteStatus(String statusId) async {
+    await _client.from('statuses').delete().eq('id', statusId);
+  }
+
+  /// Records that the current user has seen a status. Best-effort —
+  /// a missed "seen" marker just means the status shows as unviewed a
+  /// little longer, which isn't worth surfacing an error for.
+  Future<void> markStatusViewed(String statusId) async {
+    try {
+      await _client
+          .rpc('mark_status_viewed', params: {'target_status_id': statusId});
+    } catch (_) {
+      // Non-fatal, see doc comment above.
+    }
+  }
+
+  /// Who has viewed one of the current user's own statuses, most
+  /// recent view first. The RPC itself enforces that only the
+  /// creator can call this for their own status.
+  Future<List<Map<String, dynamic>>> fetchStatusViewers(
+      String statusId) async {
+    final rows = await _client
+        .rpc('get_status_viewers', params: {'target_status_id': statusId});
+    return List<Map<String, dynamic>>.from(rows as List);
   }
 }

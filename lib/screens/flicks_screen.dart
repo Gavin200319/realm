@@ -14,7 +14,16 @@ import 'create_flick_screen.dart';
 /// carousel anchored near the bottom of the video (see
 /// [_FlickCommentsCarousel]).
 class FlicksScreen extends StatefulWidget {
-  const FlicksScreen({super.key});
+  /// Whether the Flicks tab is the one currently selected in the bottom
+  /// nav. FlicksScreen is kept alive inside HomeShell's IndexedStack even
+  /// while a different tab is showing, so this is the only reliable
+  /// signal for "should any video here actually be playing right now" —
+  /// the feed's own internal page index isn't enough, since that stays
+  /// put (and would read as "active") even while a completely different
+  /// tab is on screen.
+  final bool isActive;
+
+  const FlicksScreen({super.key, this.isActive = true});
 
   @override
   State<FlicksScreen> createState() => FlicksScreenState();
@@ -156,7 +165,7 @@ class FlicksScreenState extends State<FlicksScreen> {
                 itemBuilder: (context, i) => _FlickPage(
                   key: ValueKey(_flicks[i].id),
                   flick: _flicks[i],
-                  isActive: i == _currentIndex,
+                  isActive: widget.isActive && i == _currentIndex,
                 ),
               ),
             Positioned(
