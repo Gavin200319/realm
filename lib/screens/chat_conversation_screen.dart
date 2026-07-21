@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/supabase_service.dart';
-import '../services/local_cache_service.dart';
+import '../services/app_storage_service.dart';
 import '../theme/rm_theme.dart';
 
 class ChatConversationScreen extends StatefulWidget {
@@ -30,8 +30,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
   // Messages typed locally that haven't been confirmed by the server
   // yet — either still in flight, or queued because the send failed
-  // (offline). Kept in LocalCacheService so a queued message survives
-  // an app restart instead of silently vanishing.
+  // (offline). Kept in AppStorageService (durable — not tied to any
+  // disposable-content cache) so a queued message survives an app
+  // restart instead of silently vanishing.
   List<Map<String, dynamic>> _outbox = [];
 
   bool _loading = true;
@@ -74,8 +75,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   Future<void> _init() async {
     // 1. Cache-first: show whatever was on screen last time immediately,
     // no spinner, works with zero connection.
-    final cachedMessages = await LocalCacheService.instance.loadList(_cacheKey);
-    final cachedOutbox = await LocalCacheService.instance.loadList(_outboxKey);
+    final cachedMessages = await AppStorageService.instance.loadList(_cacheKey);
+    final cachedOutbox = await AppStorageService.instance.loadList(_outboxKey);
     if (mounted) {
       setState(() {
         if (cachedMessages != null) _serverMessages = cachedMessages;
@@ -98,7 +99,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         });
         _scrollToEnd();
       }
-      await LocalCacheService.instance.saveList(_cacheKey, history);
+      await AppStorageService.instance.saveList(_cacheKey, history);
     } catch (e) {
       if (mounted && _serverMessages.isEmpty) {
         setState(() {
@@ -117,7 +118,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         .listen((rows) {
       if (!mounted) return;
       setState(() => _serverMessages = rows);
-      LocalCacheService.instance.saveList(_cacheKey, rows);
+      AppStorageService.instance.saveList(_cacheKey, rows);
       _scrollToEnd();
       _flushOutbox();
     });
@@ -146,7 +147,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           } else {
             _outbox.removeWhere((m) => m['_localId'] == pending['_localId']);
           }
-          await LocalCacheService.instance.saveList(_outboxKey, _outbox);
+          await AppStorageService.instance.saveList(_outboxKey, _outbox);
         } catch (_) {
           // Still offline (or the request genuinely failed) — leave it
           // queued and stop; we'll try again on the next stream tick.
@@ -193,7 +194,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       _outbox.add(pending);
       _sending = true;
     });
-    await LocalCacheService.instance.saveList(_outboxKey, _outbox);
+    await AppStorageService.instance.saveList(_outboxKey, _outbox);
     _scrollToEnd();
 
     try {
@@ -207,7 +208,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       } else {
         _outbox.removeWhere((m) => m['_localId'] == pending['_localId']);
       }
-      await LocalCacheService.instance.saveList(_outboxKey, _outbox);
+      await AppStorageService.instance.saveList(_outboxKey, _outbox);
     } catch (_) {
       // Offline (or a transient failure) — leave it queued in the
       // outbox. It's already persisted to cache above, shows with a

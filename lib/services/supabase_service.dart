@@ -6,6 +6,7 @@ import '../models/profile_stats.dart';
 import '../models/public_profile.dart';
 import '../models/flick.dart';
 import '../models/status_post.dart';
+import 'app_storage_service.dart';
 import 'local_cache_service.dart';
 
 /// Thin wrapper around the Supabase client. Keeping all Supabase calls
@@ -77,6 +78,7 @@ class SupabaseService {
   Future<void> signOut() async {
     await _client.auth.signOut();
     await LocalCacheService.instance.clearAll();
+    await AppStorageService.instance.clearAll();
   }
 
   // ---------------------------------------------------------------
@@ -495,6 +497,28 @@ class SupabaseService {
               return (sender == me && recipient == otherUserId) ||
                   (sender == otherUserId && recipient == me);
             }).toList());
+  }
+
+  /// A realtime stream of every incoming message addressed to the
+  /// current user, across *all* conversations — unlike [watchMessages]
+  /// this isn't scoped to a single thread. Used to drive things like
+  /// the drawer's "new message" popup, which needs to know a message
+  /// arrived regardless of which conversation it belongs to.
+  Stream<Map<String, dynamic>> watchIncomingMessages() {
+    final me = currentUser?.id;
+    if (me == null) return const Stream.empty();
+    final seen = <Object>{};
+    return _client
+        .from('messages')
+        .stream(primaryKey: ['id'])
+        .order('created_at')
+        .expand((rows) => rows.where((r) => r['recipient_id'] == me))
+        .where((r) {
+          final id = r['id'];
+          if (id == null || seen.contains(id)) return false;
+          seen.add(id);
+          return true;
+        });
   }
 
   Future<void> sendMessage({

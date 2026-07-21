@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/profile_stats.dart';
+import '../services/app_storage_service.dart';
 import '../services/data_saver_service.dart';
+import '../services/onboarding_service.dart';
+import '../services/privacy_settings_sync_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/rm_theme.dart';
 import '../widgets/location_autocomplete_field.dart';
@@ -22,6 +24,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _loading = true;
   bool _uploadingAvatar = false;
 
+  static const _statsKey = 'profile_stats';
+
   @override
   void initState() {
     super.initState();
@@ -31,8 +35,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _load() async {
     final user = SupabaseService.instance.currentUser;
     if (user == null) return;
-    final stats = await SupabaseService.instance.fetchProfileStats(user.id);
-    setState(() { _stats = stats; _loading = false; });
+
+    // Cache-first: show the last-known stats immediately, no spinner,
+    // works fully offline. This lives in AppStorageService (not
+    // LocalCacheService) precisely so it isn't treated as disposable.
+    final cached = await AppStorageService.instance.loadMap(_statsKey);
+    if (cached != null && mounted) {
+      setState(() {
+        _stats = ProfileStats.fromMap(cached);
+        _loading = false;
+      });
+    }
+
+    try {
+      final stats = await SupabaseService.instance.fetchProfileStats(user.id);
+      if (mounted) setState(() { _stats = stats; _loading = false; });
+      if (stats != null) {
+        await AppStorageService.instance.saveMap(_statsKey, stats.toMap());
+      }
+    } catch (_) {
+      // Offline (or a transient failure) — keep showing cached stats,
+      // if any, instead of blocking on an error.
+      if (mounted && _stats == null) setState(() => _loading = false);
+    }
   }
 
   Future<void> _changeAvatar() async {
@@ -328,8 +353,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.refresh_rounded,
                     label: 'Reset onboarding tutorials',
                     onTap: () async {
-                      final prefs = await SharedPreferences.getInstance();
-                      await prefs.clear();
+                      await OnboardingService.instance.resetAll();
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -628,6 +652,8 @@ class _PrivacySettingsSheetState extends State<_PrivacySettingsSheet> {
   bool _showStats = true;
   bool _loading = true;
 
+  static const _settingsKey = 'privacy_settings';
+
   @override
   void initState() {
     super.initState();
@@ -637,17 +663,46 @@ class _PrivacySettingsSheetState extends State<_PrivacySettingsSheet> {
   Future<void> _load() async {
     final user = SupabaseService.instance.currentUser;
     if (user == null) return;
-    final settings = await SupabaseService.instance.fetchPrivacySettings(user.id);
-    if (!mounted) return;
-    setState(() {
+
+    // Belt-and-suspenders: if a previous change is still queued
+    // (e.g. the connectivity-change event was missed while the app
+    // was backgrounded), try pushing it now that the sheet's open
+    // again rather than waiting on the next network transition.
+    PrivacySettingsSyncService.instance.flush();
+
+    // Cache-first, same reasoning as profile stats: show the
+    // last-known toggle state immediately rather than spinning while
+    // offline, and never lose it to a disposable-cache clear.
+    final cached = await AppStorageService.instance.loadMap(_settingsKey);
+    if (cached != null && mounted) {
+      setState(() {
+        _allowDiscovery = cached['allow_discovery'] as bool? ?? true;
+        _showHomeCity = cached['show_home_city'] as bool? ?? true;
+        _showDisplayName = cached['show_display_name'] as bool? ?? true;
+        _showStats = cached['show_stats'] as bool? ?? true;
+        _loading = false;
+      });
+    }
+
+    try {
+      final settings = await SupabaseService.instance.fetchPrivacySettings(user.id);
+      if (!mounted) return;
+      setState(() {
+        if (settings != null) {
+          _allowDiscovery = settings['allow_discovery'] as bool? ?? true;
+          _showHomeCity = settings['show_home_city'] as bool? ?? true;
+          _showDisplayName = settings['show_display_name'] as bool? ?? true;
+          _showStats = settings['show_stats'] as bool? ?? true;
+        }
+        _loading = false;
+      });
       if (settings != null) {
-        _allowDiscovery = settings['allow_discovery'] as bool? ?? true;
-        _showHomeCity = settings['show_home_city'] as bool? ?? true;
-        _showDisplayName = settings['show_display_name'] as bool? ?? true;
-        _showStats = settings['show_stats'] as bool? ?? true;
+        await AppStorageService.instance.saveMap(_settingsKey, settings);
       }
-      _loading = false;
-    });
+    } catch (_) {
+      // Offline — keep showing whatever we loaded from storage above.
+      if (mounted && _loading) setState(() => _loading = false);
+    }
   }
 
   Future<void> _save({
@@ -658,20 +713,47 @@ class _PrivacySettingsSheetState extends State<_PrivacySettingsSheet> {
   }) async {
     final user = SupabaseService.instance.currentUser;
     if (user == null) return;
-    try {
-      await SupabaseService.instance.updatePrivacySettings(
-        userId: user.id,
-        allowDiscovery: allowDiscovery,
-        showHomeCity: showHomeCity,
-        showDisplayName: showDisplayName,
-        showStats: showStats,
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Could not save: $e')));
-      }
+
+    final changed = <String, dynamic>{
+      if (allowDiscovery != null) 'allow_discovery': allowDiscovery,
+      if (showHomeCity != null) 'show_home_city': showHomeCity,
+      if (showDisplayName != null) 'show_display_name': showDisplayName,
+      if (showStats != null) 'show_stats': showStats,
+    };
+    if (changed.isEmpty) return;
+
+    // Persist the new value locally right away — a toggle flipped
+    // while offline should still "stick" on this device rather than
+    // silently reverting next time the sheet opens.
+    await AppStorageService.instance.saveMap(_settingsKey, {
+      'allow_discovery': allowDiscovery ?? _allowDiscovery,
+      'show_home_city': showHomeCity ?? _showHomeCity,
+      'show_display_name': showDisplayName ?? _showDisplayName,
+      'show_stats': showStats ?? _showStats,
+    });
+
+    // Queue it *before* attempting the push. If the push below
+    // succeeds right away, flush() clears the queue immediately after
+    // — but if we're offline, it's already durably queued and the
+    // connectivity listener in PrivacySettingsSyncService will retry
+    // it automatically the moment the device is back online, with no
+    // further action needed here.
+    await PrivacySettingsSyncService.instance.queue(changed);
+    final synced = await _attemptSync();
+
+    if (!synced && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              "Saved on this device — it'll sync automatically once you're back online.")));
     }
+  }
+
+  /// Returns true if the pending write actually reached the server.
+  Future<bool> _attemptSync() async {
+    await PrivacySettingsSyncService.instance.flush();
+    final stillPending =
+        await AppStorageService.instance.loadMap('privacy_settings_pending');
+    return stillPending == null || stillPending.isEmpty;
   }
 
   @override

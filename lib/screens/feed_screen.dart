@@ -7,10 +7,12 @@ import '../services/location_service.dart';
 import '../services/supabase_service.dart';
 import '../services/onboarding_service.dart';
 import '../services/local_cache_service.dart';
+import '../services/gesture_exclusion_service.dart';
 import '../theme/rm_theme.dart';
 import '../widgets/tutorial_overlay.dart';
 import '../widgets/drop_card.dart';
 import '../widgets/status_strip.dart';
+import '../widgets/messages_drawer.dart';
 import 'create_drop_screen.dart';
 import 'profile_screen.dart';
 import 'drop_detail_screen.dart';
@@ -52,6 +54,10 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     _initLocation();
     _checkTutorial();
     _loadAvatar();
+    // Reserve the left edge for the drawer's open-swipe instead of
+    // letting Android's gesture-nav back swipe steal it — only while
+    // this tab (the one with the drawer) is actually on screen.
+    GestureExclusionService.instance.enable();
   }
 
   /// Own avatar for the profile shortcut top-right — loaded once here
@@ -89,6 +95,7 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   void dispose() {
     _positionSub?.cancel();
     _fabCtrl.dispose();
+    GestureExclusionService.instance.disable();
     super.dispose();
   }
 
@@ -240,6 +247,8 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
       children: [
         Scaffold(
           backgroundColor: RMColors.background,
+          drawer: const MessagesDrawer(),
+          drawerEdgeDragWidth: 40,
           appBar: AppBar(
             backgroundColor: RMColors.background,
             title: Column(

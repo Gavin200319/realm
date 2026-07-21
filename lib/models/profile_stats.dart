@@ -25,4 +25,13 @@ class ProfileStats {
       followerCount: (map['follower_count'] as num?)?.toInt() ?? 0,
     );
   }
+
+  Map<String, dynamic> toMap() => {
+        'user_id': userId,
+        'username': username,
+        'avatar_url': avatarUrl,
+        'drops_created': dropsCreated,
+        'drops_unlocked': dropsUnlocked,
+        'follower_count': followerCount,
+      };
 }

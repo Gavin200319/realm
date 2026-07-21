@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import '../services/supabase_service.dart';
-import '../services/local_cache_service.dart';
+import '../services/app_storage_service.dart';
 import '../theme/rm_theme.dart';
 import 'chat_conversation_screen.dart';
 
@@ -30,7 +30,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   /// Shows whatever conversation list was cached last time immediately
   /// — no spinner, works with zero connection.
   Future<void> _loadCached() async {
-    final cached = await LocalCacheService.instance.loadList(_cacheKey);
+    final cached = await AppStorageService.instance.loadList(_cacheKey);
     if (cached != null && cached.isNotEmpty && mounted && _conversations.isEmpty) {
       setState(() {
         _conversations = cached;
@@ -46,7 +46,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
     try {
       final conversations = await SupabaseService.instance.fetchConversations();
       if (mounted) setState(() { _conversations = conversations; _error = null; });
-      await LocalCacheService.instance.saveList(_cacheKey, conversations);
+      await AppStorageService.instance.saveList(_cacheKey, conversations);
     } catch (e) {
       // Already showing cached conversations — don't replace them with
       // an error screen just because the refresh failed offline.

@@ -37,4 +37,17 @@ class OnboardingService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyDropTutorial, true);
   }
+
+  /// Resets only the tutorial-seen flags. Deliberately scoped to just
+  /// these three keys — do NOT replace this with a blanket
+  /// `prefs.clear()` at the call site, since SharedPreferences is
+  /// shared with everything else the app persists locally (chat
+  /// history/outbox, cached feed, theme, data-saver setting, etc.)
+  /// and a blanket clear would silently wipe all of it.
+  Future<void> resetAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyFeedTutorial);
+    await prefs.remove(_keyMapTutorial);
+    await prefs.remove(_keyDropTutorial);
+  }
 }

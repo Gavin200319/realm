@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -5,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/auth_gate.dart';
 import 'screens/splash_screen.dart';
 import 'services/data_saver_service.dart';
+import 'services/privacy_settings_sync_service.dart';
 import 'theme/rm_theme.dart';
 
 void main() {
@@ -37,6 +39,13 @@ class _RealityMergeAppState extends State<RealityMergeApp> {
         url: dotenv.env['SUPABASE_URL']!,
         anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
       );
+      // Not awaited on purpose: this starts the connectivity listener
+      // and attempts an immediate flush of any privacy-setting change
+      // left over from a previous offline session, but there's no
+      // reason to make the splash screen wait on it — if it's slow or
+      // fails, the toggle sheet already shows the locally-saved value
+      // either way.
+      unawaited(PrivacySettingsSyncService.instance.init());
     } catch (e) {
       _bootstrapError = e.toString();
     }
