@@ -3,8 +3,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import '../services/supabase_service.dart';
 import '../services/app_storage_service.dart';
+import '../services/sms_bridge_service.dart';
 import '../theme/rm_theme.dart';
 import 'chat_conversation_screen.dart';
+import 'sms_conversation_screen.dart';
+import 'gateway_setup_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
   ChatsScreen({super.key});
@@ -44,9 +47,28 @@ class _ChatsScreenState extends State<ChatsScreen> {
       setState(() { _loading = true; _error = null; });
     }
     try {
-      final conversations = await SupabaseService.instance.fetchConversations();
-      if (mounted) setState(() { _conversations = conversations; _error = null; });
-      await AppStorageService.instance.saveList(_cacheKey, conversations);
+      final dm = await SupabaseService.instance.fetchConversations();
+      // SMS threads live in a separate table (see v14-migration.sql),
+      // so they're fetched separately and adapted into the same shape
+      // as a DM conversation row, then merged newest-first — the
+      // person just sees one chat list either way.
+      List<Map<String, dynamic>> sms;
+      try {
+        final smsRows = await SmsBridgeService.instance.fetchSmsConversations();
+        sms = smsRows.map(_smsRowToChatRow).toList();
+      } catch (_) {
+        sms = [];
+      }
+      final merged = [...dm, ...sms]
+        ..sort((a, b) {
+          final at = DateTime.tryParse(a['last_message_at'] as String? ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bt = DateTime.tryParse(b['last_message_at'] as String? ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bt.compareTo(at);
+        });
+      if (mounted) setState(() { _conversations = merged; _error = null; });
+      await AppStorageService.instance.saveList(_cacheKey, merged);
     } catch (e) {
       // Already showing cached conversations — don't replace them with
       // an error screen just because the refresh failed offline.
@@ -56,7 +78,41 @@ class _ChatsScreenState extends State<ChatsScreen> {
     }
   }
 
+  /// Adapts a `list_sms_conversations()` row into the same shape the
+  /// chat list tile already renders for a DM row, tagged `_kind: 'sms'`
+  /// so `_openConversation` knows where to route it. There's no
+  /// `other_user_id`/username for an SMS thread — just a phone number,
+  /// which is exactly what should show in the list per the bridge's
+  /// design (the SMS side has no app account).
+  Map<String, dynamic> _smsRowToChatRow(Map<String, dynamic> c) {
+    return {
+      '_kind': 'sms',
+      'thread_id': c['thread_id'],
+      'gateway_device_id': c['gateway_device_id'],
+      'phone_number': c['phone_number'],
+      'other_username': (c['display_name'] as String?) ?? (c['phone_number'] as String?) ?? 'Unknown',
+      'last_message': c['last_message'],
+      'last_message_at': c['last_message_at'],
+      'last_sender_id': c['last_direction'] == 'outbound' ? SupabaseService.instance.currentUser?.id : null,
+      'unread_count': c['unread_count'],
+    };
+  }
+
   Future<void> _openConversation(Map<String, dynamic> convo) async {
+    if (convo['_kind'] == 'sms') {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => SmsConversationScreen(
+            threadId: convo['thread_id'] as String,
+            gatewayDeviceId: convo['gateway_device_id'] as String,
+            phoneNumber: convo['phone_number'] as String,
+            displayName: convo['other_username'] as String?,
+          ),
+        ),
+      );
+      _load();
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ChatConversationScreen(
@@ -102,6 +158,138 @@ class _ChatsScreenState extends State<ChatsScreen> {
     _load();
   }
 
+  /// Starts (or opens) a bridged SMS thread. Needs at least one
+  /// gateway device already set up (see GatewaySetupScreen) — if none
+  /// exists yet, sends the person there instead of failing silently.
+  Future<void> _startNewSmsChat() async {
+    List<Map<String, dynamic>> gateways;
+    try {
+      gateways = await SmsBridgeService.instance.fetchMyGatewayDevices();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not load gateways: $e')));
+      }
+      return;
+    }
+
+    if (gateways.isEmpty) {
+      if (!mounted) return;
+      final goSetUp = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: RMColors.surface,
+          title: Text('No SMS gateway yet'),
+          content: Text(
+              'Set up a gateway phone first — that\'s the device with the SIM that will actually send and receive the texts.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Set up gateway')),
+          ],
+        ),
+      );
+      if (goSetUp == true && mounted) {
+        await Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => GatewaySetupScreen()));
+      }
+      return;
+    }
+
+    final gatewayId = gateways.first['id'] as String;
+    final phoneCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final entered = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: RMColors.surface,
+        title: Text('Text a phone number'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: phoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(hintText: '+1 555 123 4567'),
+              autofocus: true,
+            ),
+            SizedBox(height: 8),
+            TextField(
+              controller: nameCtrl,
+              decoration: InputDecoration(hintText: 'Label (optional)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true), child: Text('Start')),
+        ],
+      ),
+    );
+    if (entered != true) return;
+    final phone = phoneCtrl.text.trim();
+    if (phone.isEmpty) return;
+    final label = nameCtrl.text.trim();
+
+    // The thread itself is created lazily server-side on the first
+    // send_sms_message RPC call (find-or-create — see v14-migration.sql),
+    // so there's no thread id yet; SmsConversationScreen sends its
+    // first message using the phone number directly and only needs a
+    // real threadId for realtime/history once one exists.
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SmsConversationScreen(
+          threadId: '',
+          gatewayDeviceId: gatewayId,
+          phoneNumber: phone,
+          displayName: label.isEmpty ? null : label,
+        ),
+      ),
+    );
+    _load();
+  }
+
+  Future<void> _showStartChatOptions() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: RMColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.person_rounded, color: RMColors.primary),
+              title: Text('Message a user'),
+              onTap: () => Navigator.pop(context, 'user'),
+            ),
+            ListTile(
+              leading: Icon(Icons.sms_rounded, color: RMColors.primary),
+              title: Text('Text a phone number'),
+              subtitle:
+                  Text('Sent via your SMS gateway', style: TextStyle(fontSize: 11)),
+              onTap: () => Navigator.pop(context, 'sms'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == 'user') {
+      await _startNewChat();
+    } else if (choice == 'sms') {
+      await _startNewSmsChat();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -109,9 +297,18 @@ class _ChatsScreenState extends State<ChatsScreen> {
       appBar: AppBar(
         title: Text('Chats'),
         backgroundColor: RMColors.background,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.sms_outlined),
+            tooltip: 'SMS Gateway',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => GatewaySetupScreen()),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _startNewChat,
+        onPressed: _showStartChatOptions,
         backgroundColor: RMColors.primary,
         foregroundColor: Colors.white,
         child: Icon(Icons.edit_rounded),
@@ -202,16 +399,22 @@ class _ChatsScreenState extends State<ChatsScreen> {
               padding: EdgeInsets.all(14),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: RMColors.primaryDim,
-                    backgroundImage: c['other_avatar_url'] != null
-                        ? CachedNetworkImageProvider(c['other_avatar_url'] as String)
-                        : null,
-                    child: c['other_avatar_url'] == null
-                        ? Icon(Icons.person_rounded, color: RMColors.primary)
-                        : null,
-                  ),
+                  c['_kind'] == 'sms'
+                      ? CircleAvatar(
+                          radius: 22,
+                          backgroundColor: RMColors.primaryDim,
+                          child: Icon(Icons.sms_rounded, color: RMColors.primary),
+                        )
+                      : CircleAvatar(
+                          radius: 22,
+                          backgroundColor: RMColors.primaryDim,
+                          backgroundImage: c['other_avatar_url'] != null
+                              ? CachedNetworkImageProvider(c['other_avatar_url'] as String)
+                              : null,
+                          child: c['other_avatar_url'] == null
+                              ? Icon(Icons.person_rounded, color: RMColors.primary)
+                              : null,
+                        ),
                   SizedBox(width: 12),
                   Expanded(
                     child: Column(

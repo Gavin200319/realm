@@ -7,6 +7,7 @@ import 'screens/auth_gate.dart';
 import 'screens/splash_screen.dart';
 import 'services/data_saver_service.dart';
 import 'services/privacy_settings_sync_service.dart';
+import 'services/sms_gateway_bridge.dart';
 import 'theme/rm_theme.dart';
 
 void main() {
@@ -46,6 +47,11 @@ class _RealityMergeAppState extends State<RealityMergeApp> {
       // fails, the toggle sheet already shows the locally-saved value
       // either way.
       unawaited(PrivacySettingsSyncService.instance.init());
+      // Same reasoning: if this phone was already acting as the SMS
+      // gateway and the process simply restarted (not an explicit
+      // "turn off"), bring it back online in the background rather
+      // than requiring a trip back to the Gateway Setup screen.
+      unawaited(SmsGatewayBridge.instance.resumeIfNeeded());
     } catch (e) {
       _bootstrapError = e.toString();
     }

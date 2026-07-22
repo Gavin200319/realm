@@ -34,8 +34,25 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
   assets:
     - .env
+    - assets/branding/realm_logo.png
+    - assets/branding/realm_icon_mark.png
+
+# Launcher icons were generated directly (mipmap-mdpi through -xxxhdpi)
+# from assets/branding/realm_icon_mark.png, since it's just the pin
+# mark cropped square — the wordmark in realm_logo.png would be
+# illegible at launcher-icon sizes. This config is kept so the icons
+# can be regenerated the same way later (`dart run flutter_launcher_icons`)
+# if the mark changes.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/branding/realm_icon_mark.png"
+  adaptive_icon_background: "#0A0A0F"
+  adaptive_icon_foreground: "assets/branding/realm_icon_mark.png"
+  min_sdk_android: 21

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../theme/rm_theme.dart';
-import '../widgets/brand_loader.dart';
 
 /// The app's boot screen — shown from the moment Flutter takes over
 /// drawing (replacing the plain native launch screen as fast as
@@ -22,13 +21,13 @@ class SplashScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Brand mark — an orbiting glow ring around a pulsing
-            // location/globe orb, echoing the "world lights up around
-            // you" concept without needing a shipped logo asset.
-            BrandLoader(size: 92),
+            // Brand mark — the Realm logo, playing a one-shot
+            // fade + scale entrance followed by a soft looping glow
+            // pulse behind it for as long as the splash is on screen.
+            const _AnimatedBrandMark(size: 128),
             SizedBox(height: 28),
             Text(
-              'REALITY MERGE',
+              'REALM',
               style: TextStyle(
                 color: RMColors.textPrimary,
                 fontSize: 20,
@@ -46,6 +45,114 @@ class SplashScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Plays the Realm logo in twice: once as a quick entrance (fade in +
+/// scale up from 70% with a slight overshoot), then settles into an
+/// indefinite, slow glow-ring pulse behind the mark — signalling
+/// "still working" the same way [_BrandProgressBar] does, just as a
+/// glow rather than a bar.
+class _AnimatedBrandMark extends StatefulWidget {
+  final double size;
+  const _AnimatedBrandMark({required this.size});
+
+  @override
+  State<_AnimatedBrandMark> createState() => _AnimatedBrandMarkState();
+}
+
+class _AnimatedBrandMarkState extends State<_AnimatedBrandMark>
+    with TickerProviderStateMixin {
+  late final AnimationController _entrance;
+  late final AnimationController _pulse;
+  late final Animation<double> _entranceScale;
+  late final Animation<double> _entranceOpacity;
+  late final Animation<double> _pulseValue;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _entrance = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _entranceScale = CurvedAnimation(
+      parent: _entrance,
+      curve: Curves.easeOutBack,
+    ).drive(Tween(begin: 0.7, end: 1.0));
+    _entranceOpacity = CurvedAnimation(
+      parent: _entrance,
+      curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
+    );
+
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+    _pulseValue = CurvedAnimation(parent: _pulse, curve: Curves.easeInOut);
+
+    _entrance.forward();
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_entrance, _pulse]),
+      builder: (context, _) {
+        final glowStrength = 0.35 + (_pulseValue.value * 0.35); // 0.35–0.70
+        final glowScale = 1.0 + (_pulseValue.value * 0.06); // gentle breathing
+
+        return Opacity(
+          opacity: _entranceOpacity.value,
+          child: Transform.scale(
+            scale: _entranceScale.value,
+            child: SizedBox(
+              width: widget.size * 1.6,
+              height: widget.size * 1.6,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Soft glow ring behind the mark, breathing slowly.
+                  Transform.scale(
+                    scale: glowScale,
+                    child: Container(
+                      width: widget.size * 1.4,
+                      height: widget.size * 1.4,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            RMColors.primary.withOpacity(glowStrength),
+                            RMColors.accent.withOpacity(glowStrength * 0.4),
+                            RMColors.primary.withOpacity(0.0),
+                          ],
+                          stops: const [0.0, 0.5, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // The actual logo mark.
+                  Image.asset(
+                    'assets/branding/realm_logo.png',
+                    width: widget.size,
+                    height: widget.size,
+                    fit: BoxFit.contain,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
