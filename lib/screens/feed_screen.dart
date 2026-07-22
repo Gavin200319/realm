@@ -101,8 +101,7 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   }
 
   /// Called by [HomeShell] every time this tab is selected (including
-  /// switching back to it), so the feed never sits on stale data —
-  /// same contract as [CompassScreenState.refresh].
+  /// switching back to it), so the feed never sits on stale data.
   Future<void> refresh() async {
     _statusStripKey.currentState?.refresh();
     if (_position != null) {
@@ -346,11 +345,6 @@ class FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                 icon: Icons.add_location_alt_rounded,
                 title: 'Leave your mark',
                 body: 'Tap "Drop here" to pin a photo, video, or message to your exact location. Set it public or private with a specific allowlist.',
-              ),
-              TutorialStep(
-                icon: Icons.navigation_rounded,
-                title: 'Find your way',
-                body: 'Switch to the Private Drops tab to see which direction the nearest locked drop is in, and how far away it is.',
               ),
             ],
             onDone: () async {

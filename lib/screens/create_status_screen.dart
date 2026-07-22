@@ -27,8 +27,10 @@ class _CreateStatusScreenState extends State<CreateStatusScreen> {
   String? _mediaType; // 'photo' or 'video'
   VideoPlayerController? _previewCtrl;
   bool _saving = false;
+  bool _trimming = false;
   double _progress = 0;
   String? _error;
+  bool _wasTrimmed = false;
 
   @override
   void dispose() {
@@ -45,26 +47,59 @@ class _CreateStatusScreenState extends State<CreateStatusScreen> {
       if (ms != null) duration = Duration(milliseconds: ms.round());
     } catch (_) {}
 
+    var resolvedFile = file;
+    var wasTrimmed = false;
+
     if (duration != null &&
         duration.inSeconds > SupabaseService.statusMaxVideoDurationSeconds) {
-      setState(() => _error =
-          'That video is ${duration!.inSeconds}s — statuses can be at most '
-          '${SupabaseService.statusMaxVideoDurationSeconds} seconds. Trim it and try again.');
-      return;
+      // Rather than bounce the user back to trim it themselves, just
+      // take the first statusMaxVideoDurationSeconds automatically —
+      // that's almost always what someone posting a status wants
+      // anyway (the beginning of the clip), and it's one less step.
+      setState(() {
+        _trimming = true;
+        _error = null;
+      });
+      try {
+        final trimmed = await VideoCompress.trimVideo(
+          file.path,
+          startTime: 0,
+          endTime: SupabaseService.statusMaxVideoDurationSeconds.toDouble(),
+        );
+        if (trimmed?.file != null) {
+          resolvedFile = trimmed!.file!;
+          wasTrimmed = true;
+        }
+      } catch (_) {
+        // Trimming failed for some reason (unsupported codec, etc.) —
+        // fall back to asking the user to trim it themselves rather
+        // than silently uploading something longer than the limit.
+        if (mounted) {
+          setState(() {
+            _trimming = false;
+            _error =
+                "Couldn't auto-trim that video — please trim it to "
+                '${SupabaseService.statusMaxVideoDurationSeconds}s yourself and try again.';
+          });
+        }
+        return;
+      }
+      if (mounted) setState(() => _trimming = false);
     }
 
     _previewCtrl?.dispose();
-    final ctrl = VideoPlayerController.file(file);
+    final ctrl = VideoPlayerController.file(resolvedFile);
     await ctrl.initialize();
     ctrl.setLooping(true);
     ctrl.play();
 
     if (!mounted) return;
     setState(() {
-      _mediaFile = file;
+      _mediaFile = resolvedFile;
       _mediaType = 'video';
       _previewCtrl = ctrl;
       _error = null;
+      _wasTrimmed = wasTrimmed;
     });
   }
 
@@ -75,6 +110,7 @@ class _CreateStatusScreenState extends State<CreateStatusScreen> {
       _mediaType = 'photo';
       _previewCtrl = null;
       _error = null;
+      _wasTrimmed = false;
     });
   }
 
@@ -160,13 +196,35 @@ class _CreateStatusScreenState extends State<CreateStatusScreen> {
         child: Column(
           children: [
             Expanded(
-              child: _mediaFile == null ? _buildPickers() : _buildPreview(),
+              child: _trimming
+                  ? _buildTrimmingIndicator()
+                  : _mediaFile == null
+                      ? _buildPickers()
+                      : _buildPreview(),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (_wasTrimmed)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.content_cut_rounded,
+                              color: RMColors.primary, size: 15),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Trimmed to the first '
+                            '${SupabaseService.statusMaxVideoDurationSeconds}s',
+                            style: TextStyle(
+                                color: RMColors.textSecondary, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (_mediaFile != null)
                     TextField(
                       controller: _captionCtrl,
@@ -215,6 +273,22 @@ class _CreateStatusScreenState extends State<CreateStatusScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTrimmingIndicator() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: Colors.white),
+          const SizedBox(height: 16),
+          Text(
+            'Trimming to ${SupabaseService.statusMaxVideoDurationSeconds}s…',
+            style: const TextStyle(color: Colors.white70),
+          ),
+        ],
       ),
     );
   }

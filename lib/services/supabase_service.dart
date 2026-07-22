@@ -403,18 +403,57 @@ class SupabaseService {
     await _client.from('profiles').update(updates).eq('id', userId);
   }
 
+  /// Everything the "Edit profile" sheet's User details section needs
+  /// in one call — username/display name/home city come from
+  /// `profiles`, email comes from the Auth user since it isn't
+  /// mirrored into that table.
+  Future<Map<String, String?>> fetchAccountDetails() async {
+    final user = currentUser;
+    if (user == null) throw Exception('Not signed in.');
+    final row = await _client
+        .from('profiles')
+        .select('username, display_name, home_city')
+        .eq('id', user.id)
+        .single();
+    return {
+      'username': row['username'] as String?,
+      'display_name': row['display_name'] as String?,
+      'home_city': row['home_city'] as String?,
+      'email': user.email,
+    };
+  }
+
   Future<void> updateProfile({
     required String userId,
+    String? username,
     String? displayName,
     String? homeCity,
     String? avatarUrl,
   }) async {
     final updates = <String, dynamic>{};
+    if (username != null) updates['username'] = username;
     if (displayName != null) updates['display_name'] = displayName;
     if (homeCity != null) updates['home_city'] = homeCity;
     if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
     if (updates.isEmpty) return;
-    await _client.from('profiles').update(updates).eq('id', userId);
+    try {
+      await _client.from('profiles').update(updates).eq('id', userId);
+    } on PostgrestException catch (e) {
+      // 23505 = unique_violation — the only column here with a UNIQUE
+      // constraint is username, so a conflict always means "taken."
+      if (e.code == '23505') {
+        throw Exception('That username is already taken.');
+      }
+      rethrow;
+    }
+  }
+
+  /// Changes the account's login email. Supabase sends a confirmation
+  /// link to the new address by default — the change only actually
+  /// takes effect once that's clicked, so the caller should tell the
+  /// user to go check their inbox rather than assume it's done.
+  Future<void> updateEmail(String newEmail) async {
+    await _client.auth.updateUser(UserAttributes(email: newEmail));
   }
 
   /// Uploads a profile picture to the `avatars` bucket under the current
@@ -694,7 +733,7 @@ class SupabaseService {
   /// validation (e.g. rejecting an obviously-too-long video) has a
   /// single source to reference. See also [StatusPost.lifespan] for
   /// the same window used to render the countdown label.
-  static const statusMaxVideoDurationSeconds = 15;
+  static const statusMaxVideoDurationSeconds = 30;
 
   /// One row per creator who currently has an active status, ordered
   /// by the server as "you first, then unseen, then most recent" —

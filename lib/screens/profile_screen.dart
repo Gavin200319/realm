@@ -432,70 +432,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ── Dialogs ────────────────────────────────────────────────────────────────
 
   void _showEditProfile(BuildContext context) {
-    final displayCtrl = TextEditingController();
-    String homeCity = '';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: RMColors.surface,
       shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
-            20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Edit Profile',
-                style: TextStyle(
-                    color: RMColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 18)),
-            SizedBox(height: 20),
-            TextField(
-              controller: displayCtrl,
-              style: TextStyle(color: RMColors.textPrimary),
-              decoration: InputDecoration(
-                labelText: 'Display name',
-                suffixIcon: EmojiSheetButton(
-                  controller: displayCtrl,
-                  color: RMColors.textSecondary,
-                ),
-              ),
-            ),
-            SizedBox(height: 14),
-            LocationAutocompleteField(
-              label: 'Home city',
-              onSelected: (v) => homeCity = v,
-            ),
-            SizedBox(height: 20),
-            FilledButton(
-              onPressed: () async {
-                final user = SupabaseService.instance.currentUser;
-                if (user == null) return;
-                try {
-                  await SupabaseService.instance.updateProfile(
-                    userId: user.id,
-                    displayName: displayCtrl.text.trim().isEmpty
-                        ? null
-                        : displayCtrl.text.trim(),
-                    homeCity: homeCity.isEmpty ? null : homeCity,
-                  );
-                  if (ctx.mounted) Navigator.of(ctx).pop();
-                } catch (e) {
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(content: Text(e.toString())),
-                    );
-                  }
-                }
-              },
-              child: Text('Save changes'),
-            ),
-          ],
-        ),
-      ),
+      builder: (ctx) => _EditProfileSheet(onSaved: _load),
     );
   }
 
@@ -587,6 +530,267 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 // ── Notification settings sheet ───────────────────────────────────────────────
+
+class _EditProfileSheet extends StatefulWidget {
+  final VoidCallback onSaved;
+
+  const _EditProfileSheet({required this.onSaved});
+
+  @override
+  State<_EditProfileSheet> createState() => _EditProfileSheetState();
+}
+
+class _EditProfileSheetState extends State<_EditProfileSheet> {
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+  String? _info;
+
+  final _usernameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _displayCtrl = TextEditingController();
+  String _homeCity = '';
+
+  String _originalUsername = '';
+  String _originalEmail = '';
+  String _originalDisplayName = '';
+  String _originalHomeCity = '';
+
+  // Which of the pencil-toggled rows are currently showing their
+  // editable TextField rather than the static value.
+  final Set<String> _editing = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _usernameCtrl.dispose();
+    _emailCtrl.dispose();
+    _displayCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final details = await SupabaseService.instance.fetchAccountDetails();
+      _originalUsername = details['username'] ?? '';
+      _originalEmail = details['email'] ?? '';
+      _originalDisplayName = details['display_name'] ?? '';
+      _originalHomeCity = details['home_city'] ?? '';
+      _usernameCtrl.text = _originalUsername;
+      _emailCtrl.text = _originalEmail;
+      _displayCtrl.text = _originalDisplayName;
+      _homeCity = _originalHomeCity;
+      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.toString(); });
+    }
+  }
+
+  Future<void> _save() async {
+    final user = SupabaseService.instance.currentUser;
+    if (user == null) return;
+
+    final newUsername = _usernameCtrl.text.trim();
+    final newDisplayName = _displayCtrl.text.trim();
+    final newEmail = _emailCtrl.text.trim();
+
+    setState(() { _saving = true; _error = null; _info = null; });
+
+    try {
+      await SupabaseService.instance.updateProfile(
+        userId: user.id,
+        username:
+            (newUsername.isNotEmpty && newUsername != _originalUsername)
+                ? newUsername
+                : null,
+        displayName: (newDisplayName.isNotEmpty &&
+                newDisplayName != _originalDisplayName)
+            ? newDisplayName
+            : null,
+        homeCity:
+            _homeCity.isNotEmpty && _homeCity != _originalHomeCity
+                ? _homeCity
+                : null,
+      );
+
+      String? emailNotice;
+      if (newEmail.isNotEmpty && newEmail != _originalEmail) {
+        await SupabaseService.instance.updateEmail(newEmail);
+        emailNotice =
+            'Check $newEmail to confirm your new email — it won\'t '
+            'take effect until then.';
+      }
+
+      if (!mounted) return;
+      widget.onSaved();
+      Navigator.of(context).pop();
+      if (emailNotice != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(emailNotice)));
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Profile updated.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() =>
+            _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+      child: _loading
+          ? SizedBox(
+              height: 160,
+              child: Center(
+                  child: CircularProgressIndicator(color: RMColors.primary)),
+            )
+          : SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Edit profile',
+                      style: TextStyle(
+                          color: RMColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18)),
+                  SizedBox(height: 4),
+                  Text('User details',
+                      style: TextStyle(
+                          color: RMColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          letterSpacing: 0.4)),
+                  SizedBox(height: 12),
+                  _buildDetailRow(
+                    fieldKey: 'username',
+                    label: 'Username',
+                    controller: _usernameCtrl,
+                    prefixText: '@',
+                  ),
+                  Divider(color: RMColors.border, height: 24),
+                  _buildDetailRow(
+                    fieldKey: 'displayName',
+                    label: 'Display name',
+                    controller: _displayCtrl,
+                    trailing: EmojiSheetButton(
+                      controller: _displayCtrl,
+                      color: RMColors.textSecondary,
+                      compact: true,
+                    ),
+                  ),
+                  Divider(color: RMColors.border, height: 24),
+                  _buildDetailRow(
+                    fieldKey: 'email',
+                    label: 'Email',
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  SizedBox(height: 20),
+                  LocationAutocompleteField(
+                    label: 'Home city',
+                    initialValue:
+                        _originalHomeCity.isEmpty ? null : _originalHomeCity,
+                    onSelected: (v) => _homeCity = v,
+                  ),
+                  if (_error != null)
+                    Padding(
+                      padding: EdgeInsets.only(top: 14),
+                      child: Text(_error!,
+                          style: TextStyle(color: RMColors.danger, fontSize: 13)),
+                    ),
+                  SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: _saving ? null : _save,
+                    child: _saving
+                        ? SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text('Save changes'),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  /// A "value + pencil" row that swaps to an editable [TextField] once
+  /// its pencil is tapped — the app's own username/email/display-name
+  /// weren't editable at all before this, so surfacing them read-only
+  /// first (rather than as inputs the user has to clear and retype)
+  /// keeps their current value visible until they actually mean to
+  /// change it.
+  Widget _buildDetailRow({
+    required String fieldKey,
+    required String label,
+    required TextEditingController controller,
+    String? prefixText,
+    Widget? trailing,
+    TextInputType? keyboardType,
+  }) {
+    final isEditing = _editing.contains(fieldKey);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: isEditing
+              ? TextField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: keyboardType,
+                  style: TextStyle(color: RMColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: label,
+                    prefixText: prefixText,
+                    suffixIcon: trailing,
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: TextStyle(
+                            color: RMColors.textSecondary, fontSize: 12)),
+                    SizedBox(height: 3),
+                    Text(
+                      controller.text.isEmpty
+                          ? '—'
+                          : '${prefixText ?? ''}${controller.text}',
+                      style: TextStyle(
+                          color: RMColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15),
+                    ),
+                  ],
+                ),
+        ),
+        if (!isEditing)
+          IconButton(
+            icon: Icon(Icons.edit_outlined,
+                size: 18, color: RMColors.textSecondary),
+            tooltip: 'Edit $label',
+            onPressed: () => setState(() => _editing.add(fieldKey)),
+          ),
+      ],
+    );
+  }
+}
 
 class _NotificationSettingsSheet extends StatefulWidget {
   _NotificationSettingsSheet();

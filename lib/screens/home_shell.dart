@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/rm_theme.dart';
 import 'feed_screen.dart';
-import 'compass_screen.dart';
 import 'chats_screen.dart';
 import 'flicks_screen.dart';
 
@@ -23,7 +22,6 @@ class _HomeShellState extends State<HomeShell> {
   // untouched, would otherwise stay that way for the rest of the session
   // even after switching away and back.
   final _feedKey = GlobalKey<FeedScreenState>();
-  final _compassKey = GlobalKey<CompassScreenState>();
   final _flicksKey = GlobalKey<FlicksScreenState>();
 
   void _onDestinationSelected(int index) {
@@ -34,9 +32,6 @@ class _HomeShellState extends State<HomeShell> {
         break;
       case 1:
         _flicksKey.currentState?.refresh();
-        break;
-      case 2:
-        _compassKey.currentState?.refresh();
         break;
     }
   }
@@ -57,7 +52,6 @@ class _HomeShellState extends State<HomeShell> {
         children: [
           FeedScreen(key: _feedKey),
           FlicksScreen(key: _flicksKey, isActive: _currentIndex == 1),
-          CompassScreen(key: _compassKey),
           ChatsScreen(),
         ],
       ),
@@ -83,13 +77,6 @@ class _HomeShellState extends State<HomeShell> {
               selectedIcon:
                   Icon(Icons.movie_creation_rounded, color: RMColors.primary),
               label: 'Flicks',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.navigation_outlined,
-                  color: RMColors.textSecondary),
-              selectedIcon:
-                  Icon(Icons.navigation_rounded, color: RMColors.primary),
-              label: 'Private Drops',
             ),
             NavigationDestination(
               icon: Icon(Icons.chat_bubble_outline_rounded,
