@@ -61,10 +61,12 @@ class _CreateStatusScreenState extends State<CreateStatusScreen> {
         _error = null;
       });
       try {
-        final trimmed = await VideoCompress.trimVideo(
+        final trimmed = await VideoCompress.compressVideo(
           file.path,
+          quality: VideoQuality.DefaultQuality,
           startTime: 0,
-          endTime: SupabaseService.statusMaxVideoDurationSeconds.toDouble(),
+          duration: SupabaseService.statusMaxVideoDurationSeconds,
+          deleteOrigin: false,
         );
         if (trimmed?.file != null) {
           resolvedFile = trimmed!.file!;
