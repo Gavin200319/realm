@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/auth_gate.dart';
 import 'screens/splash_screen.dart';
+import 'services/account_manager_service.dart';
 import 'services/data_saver_service.dart';
 import 'services/privacy_settings_sync_service.dart';
 import 'services/sms_gateway_bridge.dart';
@@ -40,6 +41,12 @@ class _RealityMergeAppState extends State<RealityMergeApp> {
         url: dotenv.env['SUPABASE_URL']!,
         anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
       );
+      // Whichever account's session Supabase just restored (or none)
+      // needs to be reflected in the local caches' namespacing before
+      // any screen reads from them — otherwise the very first frame
+      // could show an empty cache for an account that actually has
+      // plenty of offline data saved.
+      await AccountManagerService.instance.applyActiveNamespaceFromCurrentSession();
       // Not awaited on purpose: this starts the connectivity listener
       // and attempts an immediate flush of any privacy-setting change
       // left over from a previous offline session, but there's no

@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
+import '../services/account_manager_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/location_autocomplete_field.dart';
+import 'home_shell.dart';
 
 class LoginScreen extends StatefulWidget {
-  LoginScreen({super.key});
+  /// True when this screen was pushed on top of an already-signed-in
+  /// session specifically to add another account (from the account
+  /// switcher), rather than being the app's initial auth screen. This
+  /// only changes copy/navigation on success — the sign-in/sign-up
+  /// calls themselves are identical either way.
+  final bool isAddingAccount;
+
+  LoginScreen({super.key, this.isAddingAccount = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -40,7 +49,25 @@ class _LoginScreenState extends State<LoginScreen> {
           password: _passwordCtrl.text,
         );
       }
-      // AuthGate's stream listener handles navigation on success.
+
+      // Snapshot this account's session + profile summary so it shows
+      // up in the account switcher and can be switched back to later,
+      // even offline.
+      await AccountManagerService.instance.rememberCurrentSession();
+
+      if (!mounted) return;
+      if (widget.isAddingAccount) {
+        // A second account just became active on top of an already-
+        // running app. Rather than trust every open screen to notice
+        // the swap on its own, drop the whole navigation stack and
+        // rebuild fresh under the new account — the same thing that
+        // happens when switching from the account switcher sheet.
+        Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => HomeShell()),
+          (route) => false,
+        );
+      }
+      // Otherwise AuthGate's stream listener handles navigation.
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -51,20 +78,25 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: widget.isAddingAccount
+          ? AppBar(title: Text('Add account'))
+          : null,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(height: 48),
+              SizedBox(height: widget.isAddingAccount ? 8 : 48),
               Text(
                 'Reality Merge',
                 style: Theme.of(context).textTheme.headlineMedium,
                 textAlign: TextAlign.center,
               ),
               Text(
-                'The world is no longer empty.',
+                widget.isAddingAccount
+                    ? 'Sign in or sign up with another account.'
+                    : 'The world is no longer empty.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey),
               ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/drop.dart';
@@ -17,6 +18,19 @@ class SupabaseService {
   static final SupabaseService instance = SupabaseService._();
 
   SupabaseClient get _client => Supabase.instance.client;
+
+  /// Applied to the handful of reads that back a "cache-first" screen
+  /// (profile stats, privacy settings, the chat list, the feed, …).
+  /// Those screens already show cached data immediately and only use
+  /// this call to refresh it in the background — but without any
+  /// timeout, an unreachable network (rather than a request that's
+  /// cleanly rejected) can leave the underlying `Future` hanging far
+  /// longer than a phone's radio actually needs to give up, which
+  /// left a couple of screens' loading spinners stuck indefinitely
+  /// while offline instead of falling back to the cached data
+  /// already on screen. Failing fast here means the `catch` block in
+  /// each of those screens runs quickly, so it can do so.
+  static const _quickReadTimeout = Duration(seconds: 8);
 
   // ---------------------------------------------------------------
   // Auth
@@ -81,6 +95,40 @@ class SupabaseService {
     await AppStorageService.instance.clearAll();
   }
 
+  /// The current session, if any — used by `AccountManagerService` to
+  /// snapshot a full set of tokens for the account switcher.
+  Session? get currentSession => _client.auth.currentSession;
+
+  /// A JSON-serialized copy of [currentSession], suitable for handing
+  /// to [restoreSession] later (including after an app restart, from
+  /// a different account's session having since taken its place).
+  String? get currentSessionJson {
+    final session = currentSession;
+    if (session == null) return null;
+    return jsonEncode(session.toJson());
+  }
+
+  /// Loads a previously-snapshotted session (from [currentSessionJson])
+  /// straight into the client. If its access token hasn't expired yet
+  /// this is a pure local operation — no network round trip — which is
+  /// exactly what makes switching between saved accounts fast and
+  /// available offline. An already-expired token still needs one
+  /// round trip to silently refresh, the same as any token-based
+  /// session would.
+  Future<void> restoreSession(String sessionJson) async {
+    await _client.auth.recoverSession(sessionJson);
+  }
+
+  /// Just enough of a profile (username/display name/avatar/home
+  /// city) to render an entry in the account switcher.
+  Future<Map<String, dynamic>?> fetchAccountSummary(String userId) async {
+    return await _client
+        .from('profiles')
+        .select('username, display_name, avatar_url, home_city')
+        .eq('id', userId)
+        .maybeSingle();
+  }
+
   // ---------------------------------------------------------------
   // Drops
   // ---------------------------------------------------------------
@@ -94,7 +142,7 @@ class SupabaseService {
       'user_lat': lat,
       'user_lng': lng,
       'radius_m': radiusM,
-    });
+    }).timeout(_quickReadTimeout);
     return (rows as List)
         .map((row) => Drop.fromMap(row as Map<String, dynamic>))
         .toList();
@@ -347,7 +395,8 @@ class SupabaseService {
         .from('profile_stats')
         .select()
         .eq('user_id', userId)
-        .maybeSingle();
+        .maybeSingle()
+        .timeout(_quickReadTimeout);
     if (row == null) return null;
     return ProfileStats.fromMap(row);
   }
@@ -380,7 +429,8 @@ class SupabaseService {
         .from('profiles')
         .select('show_home_city, show_display_name, show_stats, allow_discovery')
         .eq('id', userId)
-        .maybeSingle();
+        .maybeSingle()
+        .timeout(_quickReadTimeout);
     return row;
   }
 
@@ -501,7 +551,8 @@ class SupabaseService {
   /// newest conversation first. Backed by the `list_conversations` RPC
   /// (see v4-migration.sql).
   Future<List<Map<String, dynamic>>> fetchConversations() async {
-    final rows = await _client.rpc('list_conversations');
+    final rows =
+        await _client.rpc('list_conversations').timeout(_quickReadTimeout);
     return List<Map<String, dynamic>>.from(rows as List);
   }
 
@@ -516,7 +567,8 @@ class SupabaseService {
         .select()
         .or('and(sender_id.eq.$me,recipient_id.eq.$otherUserId),'
             'and(sender_id.eq.$otherUserId,recipient_id.eq.$me)')
-        .order('created_at', ascending: true);
+        .order('created_at', ascending: true)
+        .timeout(_quickReadTimeout);
     return List<Map<String, dynamic>>.from(rows);
   }
 
@@ -595,7 +647,7 @@ class SupabaseService {
       'limit_count': limit,
       if (beforeCreatedAt != null)
         'before_created_at': beforeCreatedAt.toIso8601String(),
-    });
+    }).timeout(_quickReadTimeout);
     return (rows as List)
         .map((row) => Flick.fromMap(row as Map<String, dynamic>))
         .toList();
@@ -739,7 +791,8 @@ class SupabaseService {
   /// by the server as "you first, then unseen, then most recent" —
   /// see fetch_status_feed in v11-migration.sql.
   Future<List<StatusFeedEntry>> fetchStatusFeed() async {
-    final rows = await _client.rpc('fetch_status_feed');
+    final rows =
+        await _client.rpc('fetch_status_feed').timeout(_quickReadTimeout);
     return (rows as List)
         .map((row) => StatusFeedEntry.fromMap(row as Map<String, dynamic>))
         .toList();

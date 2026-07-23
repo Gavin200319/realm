@@ -14,6 +14,13 @@ class SmsBridgeService {
 
   SupabaseClient get _client => Supabase.instance.client;
 
+  /// Same reasoning as `SupabaseService._quickReadTimeout`: these two
+  /// reads back cache-first screens (the Chats list, an open SMS
+  /// thread) that already show cached data immediately — this just
+  /// makes sure a background refresh over a dead connection fails
+  /// fast instead of leaving that data stuck mid-refresh.
+  static const _quickReadTimeout = Duration(seconds: 8);
+
   // ---------------------------------------------------------------
   // Owner side
   // ---------------------------------------------------------------
@@ -21,7 +28,9 @@ class SmsBridgeService {
   /// One row per SMS thread the current user owns, newest first —
   /// shaped to merge directly into the same list as fetchConversations().
   Future<List<Map<String, dynamic>>> fetchSmsConversations() async {
-    final rows = await _client.rpc('list_sms_conversations');
+    final rows = await _client
+        .rpc('list_sms_conversations')
+        .timeout(_quickReadTimeout);
     return List<Map<String, dynamic>>.from(rows as List);
   }
 
@@ -32,7 +41,8 @@ class SmsBridgeService {
         .from('sms_messages')
         .select()
         .eq('thread_id', threadId)
-        .order('created_at', ascending: true);
+        .order('created_at', ascending: true)
+        .timeout(_quickReadTimeout);
     return List<Map<String, dynamic>>.from(rows);
   }
 

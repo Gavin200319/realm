@@ -1,13 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/profile_stats.dart';
+import '../services/account_manager_service.dart';
 import '../services/app_storage_service.dart';
 import '../services/data_saver_service.dart';
 import '../services/onboarding_service.dart';
 import '../services/privacy_settings_sync_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/rm_theme.dart';
+import '../widgets/account_switcher_sheet.dart';
 import '../widgets/location_autocomplete_field.dart';
 import '../widgets/emoji_input.dart';
 import 'followers_screen.dart';
@@ -36,6 +39,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _load() async {
     final user = SupabaseService.instance.currentUser;
     if (user == null) return;
+
+    // Best-effort, not awaited: keeps the account switcher's stored
+    // avatar/display name in sync after edits, without blocking this
+    // screen's own stats load on it.
+    unawaited(AccountManagerService.instance.refreshCurrentAccountSummary());
 
     // Cache-first: show the last-known stats immediately, no spinner,
     // works fully offline. This lives in AppStorageService (not
@@ -373,6 +381,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           fontSize: 15)),
                   SizedBox(height: 12),
                   _SettingsTile(
+                    icon: Icons.swap_horiz_rounded,
+                    label: 'Switch account',
+                    onTap: () => showAccountSwitcherSheet(context),
+                  ),
+                  _SettingsTile(
                     icon: Icons.logout_rounded,
                     label: 'Sign out',
                     onTap: () => _confirmSignOut(context),
@@ -480,7 +493,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
           FilledButton(
             onPressed: () async {
               Navigator.of(ctx).pop();
-              await SupabaseService.instance.signOut();
+              final userId = SupabaseService.instance.currentUser?.id;
+              if (userId != null) {
+                await AccountManagerService.instance
+                    .forgetAccount(userId, alsoSignOut: true);
+              }
+              // If another saved account took over as active, rebuild
+              // fresh under it rather than trusting already-open
+              // screens to notice the swap on their own. If none did
+              // (no other accounts saved), AuthGate handles showing
+              // the login screen on its own.
+              if (context.mounted &&
+                  SupabaseService.instance.currentUser != null) {
+                relaunchToFreshHome(context);
+              }
             },
             child: Text('Sign out'),
           ),
@@ -511,8 +537,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 backgroundColor: RMColors.danger),
             onPressed: () async {
               Navigator.of(ctx).pop();
+              final userId = SupabaseService.instance.currentUser?.id;
               try {
                 await SupabaseService.instance.deleteAccount();
+                if (userId != null) {
+                  // deleteAccount() already signed out server-side;
+                  // this just drops it from the local switcher list
+                  // and, if another saved account remains, switches
+                  // to it automatically.
+                  await AccountManagerService.instance.forgetAccount(userId);
+                }
+                if (context.mounted &&
+                    SupabaseService.instance.currentUser != null) {
+                  relaunchToFreshHome(context);
+                }
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
