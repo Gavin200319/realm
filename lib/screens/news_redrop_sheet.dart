@@ -35,12 +35,24 @@ class _NewsRedropSheetState extends State<NewsRedropSheet> {
   bool _busy = false;
   bool _alreadyRedropped = false;
   String? _error;
+  bool _precached = false;
 
   @override
   void initState() {
     super.initState();
     _loadExisting();
-    if (widget.article.imageUrl != null) {
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // precacheImage needs an inherited widget (MediaQuery, via
+    // createLocalImageConfiguration) that isn't available to read yet
+    // in initState — didChangeDependencies is the first safe point,
+    // and it can fire more than once, so this only fires the actual
+    // precache the first time.
+    if (!_precached && widget.article.imageUrl != null) {
+      _precached = true;
       // Warm the image cache so the preview (and anything captured
       // from it) never shows a blank frame while a network fetch is
       // still in flight.
