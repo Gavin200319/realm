@@ -334,6 +334,15 @@ class _RedropPreview extends StatelessWidget {
                                 Container(color: Colors.white10),
                           ),
                         ),
+                      )
+                    else if (article.generatedImageBytes != null)
+                      ClipRRect(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                        child: AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: Image.memory(article.generatedImageBytes!,
+                              fit: BoxFit.cover),
+                        ),
                       ),
                     Padding(
                       padding: EdgeInsets.all(12),

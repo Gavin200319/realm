@@ -37,16 +37,42 @@ class _RealityMergeAppState extends State<RealityMergeApp> {
       await dotenv.load(fileName: '.env');
       await ThemeController.instance.init();
       await DataSaverService.instance.init();
-      await Supabase.initialize(
-        url: dotenv.env['SUPABASE_URL']!,
-        anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-      );
+      // Supabase.initialize() is the one step here that can genuinely
+      // hang rather than fail: if this device already has a saved
+      // session, it tries to restore/refresh it over the network, and
+      // that call has no timeout of its own. On a slow or flaky
+      // connection that means it can just sit there indefinitely —
+      // which is exactly what made the splash screen "sometimes work,
+      // sometimes not" depending on whatever the network happened to
+      // be doing at that moment. Capping it here turns that into a
+      // clear, retryable error instead of an unbounded hang.
+      //
+      // Note that .timeout() only stops *waiting* on the call — it
+      // doesn't cancel the underlying initialize(), which can still
+      // go on to complete successfully in the background after we've
+      // given up on it. If that happens and the person taps "Try
+      // again", a second initialize() call would throw ("already
+      // initialized") purely because the first one quietly finished
+      // late — so that specific error is treated as success here
+      // rather than surfaced as a fresh failure.
+      try {
+        await Supabase.initialize(
+          url: dotenv.env['SUPABASE_URL']!,
+          anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+        ).timeout(const Duration(seconds: 12));
+      } catch (e) {
+        if (!e.toString().toLowerCase().contains('already')) rethrow;
+      }
       // Whichever account's session Supabase just restored (or none)
       // needs to be reflected in the local caches' namespacing before
       // any screen reads from them — otherwise the very first frame
       // could show an empty cache for an account that actually has
-      // plenty of offline data saved.
-      await AccountManagerService.instance.applyActiveNamespaceFromCurrentSession();
+      // plenty of offline data saved. This can also touch the network
+      // (see AccountManagerService.rememberCurrentSession) on a
+      // first-time-per-device login, so it gets the same ceiling.
+      await AccountManagerService.instance
+          .applyActiveNamespaceFromCurrentSession()
+          .timeout(const Duration(seconds: 12));
       // Not awaited on purpose: this starts the connectivity listener
       // and attempts an immediate flush of any privacy-setting change
       // left over from a previous offline session, but there's no
@@ -59,6 +85,10 @@ class _RealityMergeAppState extends State<RealityMergeApp> {
       // "turn off"), bring it back online in the background rather
       // than requiring a trip back to the Gateway Setup screen.
       unawaited(SmsGatewayBridge.instance.resumeIfNeeded());
+    } on TimeoutException {
+      _bootstrapError =
+          'Taking too long to connect — check your internet connection '
+          'and try again.';
     } catch (e) {
       _bootstrapError = e.toString();
     }

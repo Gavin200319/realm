@@ -84,8 +84,8 @@ class UpdatesViewState extends State<UpdatesView> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  Future<void> _openDetail(NewsArticle article) {
-    return Navigator.of(context).push(
+  void _openDetail(NewsArticle article) {
+    Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => NewsDetailScreen(article: article)),
     );
   }
@@ -176,10 +176,10 @@ class UpdatesViewState extends State<UpdatesView> {
           return _NewsCardWithCount(
             key: ValueKey(article.id),
             article: article,
-            onOpenDetail: () => _openDetail(article),
-            onOpenExternal: () => _openExternal(article),
-            onOpenComments: () => _openComments(article),
-            onOpenRedropSheet: () => _openRedropSheet(article),
+            onOpenDetail: _openDetail,
+            onOpenExternal: _openExternal,
+            onOpenComments: _openComments,
+            onOpenRedropSheet: _openRedropSheet,
           );
         },
       ),
@@ -192,10 +192,10 @@ class UpdatesViewState extends State<UpdatesView> {
 /// name — cheap, best-effort, and never blocks the card from showing.
 class _NewsCardWithCount extends StatefulWidget {
   final NewsArticle article;
-  final VoidCallback onOpenDetail;
-  final VoidCallback onOpenExternal;
-  final Future<void> Function() onOpenComments;
-  final Future<RedropOutcome?> Function() onOpenRedropSheet;
+  final void Function(NewsArticle) onOpenDetail;
+  final void Function(NewsArticle) onOpenExternal;
+  final Future<void> Function(NewsArticle) onOpenComments;
+  final Future<RedropOutcome?> Function(NewsArticle) onOpenRedropSheet;
 
   const _NewsCardWithCount({
     super.key,
@@ -300,7 +300,7 @@ class _NewsCardWithCountState extends State<_NewsCardWithCount> {
   }
 
   Future<void> _handleRedrop() async {
-    final outcome = await widget.onOpenRedropSheet();
+    final outcome = await widget.onOpenRedropSheet(_resolvedArticle ?? widget.article);
     if (outcome == null || !mounted) return;
     if (outcome == RedropOutcome.sharedToStatus) {
       ScaffoldMessenger.of(context)
@@ -314,17 +314,21 @@ class _NewsCardWithCountState extends State<_NewsCardWithCount> {
 
   @override
   Widget build(BuildContext context) {
+    final resolved = _resolvedArticle ?? widget.article;
     return NewsCard(
-      article: _resolvedArticle ?? widget.article,
+      article: resolved,
       commentCount: _count,
       redropCount: _redropCount,
       iRedropped: _iRedropped,
-      onOpenDetail: widget.onOpenDetail,
-      onOpenExternal: widget.onOpenExternal,
+      onOpenDetail: () => widget.onOpenDetail(resolved),
+      onOpenExternal: () => widget.onOpenExternal(resolved),
       onOpenComments: () async {
         // Refresh the count once the sheet actually closes, in case
-        // the person just added a comment.
-        await widget.onOpenComments();
+        // the person just added a comment. Passing the resolved
+        // article through means the comments sheet's header (if it
+        // shows one) also gets the story's image, same as the detail
+        // screen and redrop sheet.
+        await widget.onOpenComments(resolved);
         _loadCount();
       },
       onRedrop: _handleRedrop,

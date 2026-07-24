@@ -126,7 +126,8 @@ class SupabaseService {
         .from('profiles')
         .select('username, display_name, avatar_url, home_city')
         .eq('id', userId)
-        .maybeSingle();
+        .maybeSingle()
+        .timeout(_quickReadTimeout);
   }
 
   // ---------------------------------------------------------------

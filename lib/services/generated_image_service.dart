@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import '../models/news_article.dart';
@@ -89,7 +90,9 @@ class GeneratedImageService {
       _inFlight.remove(article.id);
       if (bytes != null) _generatedThisSession++;
       return bytes;
-    }).catchError((_) {
+    }).catchError((e) {
+      debugPrint('[GeneratedImageService] Unexpected error generating '
+          'image for "${article.title}": $e');
       _cache[article.id] = null;
       _inFlight.remove(article.id);
       return null;
@@ -99,37 +102,77 @@ class GeneratedImageService {
   }
 
   Future<Uint8List?> _requestImage(NewsArticle article) async {
-    final apiKey = dotenv.env['OPENAI_API_KEY'];
-    if (apiKey == null || apiKey.trim().isEmpty) return null;
+    final rawKey = dotenv.env['OPENAI_API_KEY'];
+    if (rawKey == null || rawKey.trim().isEmpty) return null;
+    // A key pasted into a GitHub secret (or a local .env) sometimes
+    // picks up a trailing newline or space, which turns into an
+    // invisible-but-invalid Authorization header and a 401 that looks
+    // identical to "no key configured" from the outside. Trimming
+    // here means that class of mistake fails loudly in the log below
+    // instead of just silently producing no image.
+    final apiKey = rawKey.trim();
 
     final prompt = _buildPrompt(article);
 
-    final response = await _client
-        .post(
-          Uri.parse('https://api.openai.com/v1/images/generations'),
-          headers: {
-            'Authorization': 'Bearer $apiKey',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            'model': 'gpt-image-1',
-            'prompt': prompt,
-            'size': '1536x1024',
-            'quality': 'low',
-            'n': 1,
-          }),
-        )
-        .timeout(const Duration(seconds: 30));
+    late final http.Response response;
+    try {
+      response = await _client
+          .post(
+            Uri.parse('https://api.openai.com/v1/images/generations'),
+            headers: {
+              'Authorization': 'Bearer $apiKey',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'model': 'gpt-image-1',
+              'prompt': prompt,
+              'size': '1536x1024',
+              'quality': 'low',
+              'n': 1,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+    } catch (e) {
+      debugPrint('[GeneratedImageService] Request failed for '
+          '"${article.title}": $e');
+      return null;
+    }
 
-    if (response.statusCode != 200) return null;
+    if (response.statusCode != 200) {
+      // Swallowing this without a trace is exactly what made a bad
+      // key/model-access/rate-limit problem indistinguishable from
+      // "feature just isn't generating images" — log enough of the
+      // body to tell those apart. OpenAI's most common non-200s here:
+      //  - 401: key is missing/invalid/mistyped (check the GitHub
+      //    secret name is exactly OPENAI_API_KEY and has no stray
+      //    whitespace — see the trim above).
+      //  - 403: key is valid but this org hasn't completed the
+      //    identity verification OpenAI requires for gpt-image-1
+      //    access — this is a project-dashboard step, not a code fix.
+      //  - 429: rate limited or out of quota/billing.
+      final snippet = response.body.length > 400
+          ? '${response.body.substring(0, 400)}…'
+          : response.body;
+      debugPrint('[GeneratedImageService] OpenAI returned '
+          '${response.statusCode} for "${article.title}": $snippet');
+      return null;
+    }
 
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final data = decoded['data'] as List?;
-    if (data == null || data.isEmpty) return null;
+    if (data == null || data.isEmpty) {
+      debugPrint('[GeneratedImageService] 200 response had no image data '
+          'for "${article.title}": ${response.body}');
+      return null;
+    }
 
     final first = data.first as Map<String, dynamic>;
     final b64 = first['b64_json'] as String?;
-    if (b64 == null || b64.isEmpty) return null;
+    if (b64 == null || b64.isEmpty) {
+      debugPrint('[GeneratedImageService] Response image entry had no '
+          'b64_json for "${article.title}"');
+      return null;
+    }
 
     return base64Decode(b64);
   }
