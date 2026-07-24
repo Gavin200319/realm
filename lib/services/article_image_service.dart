@@ -125,7 +125,7 @@ class ArticleImageService {
 
   _JsonLdImage? _scanJsonLd(String head) {
     final scriptPattern = RegExp(
-      r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+      "<script[^>]+type=[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>",
       caseSensitive: false,
       dotAll: true,
     );
