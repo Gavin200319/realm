@@ -432,6 +432,78 @@ class SupabaseService {
     return (result as num).toInt();
   }
 
+  // ---------------------------------------------------------------
+  // News redrops (Updates tab) — repost a story, optionally with a
+  // requote, distinct from sharing it to your status (see createStatus
+  // below, which renders the card into an actual image).
+  // ---------------------------------------------------------------
+
+  /// Redrops of a story, newest first, each carrying who redropped it
+  /// and their requote text if they added one.
+  Future<List<Map<String, dynamic>>> fetchNewsRedrops(
+      String articleLink) async {
+    final rows = await _client
+        .from('news_redrops')
+        .select('*, profiles(username, avatar_url)')
+        .eq('article_link', articleLink)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// Count only — used on the card itself, same "don't pull every row
+  /// just to show a number" contract as [fetchNewsCommentCount].
+  Future<int> fetchNewsRedropCount(String articleLink) async {
+    final result = await _client.rpc('news_redrop_count',
+        params: {'target_article_link': articleLink});
+    return (result as num).toInt();
+  }
+
+  /// Whether the current user has already redropped this story, and
+  /// their requote text if so — drives whether the redrop button
+  /// reads as "Redrop" or "Redropped" on the card/detail screen.
+  Future<Map<String, dynamic>?> fetchMyNewsRedrop(String articleLink) async {
+    final user = currentUser;
+    if (user == null) return null;
+    return await _client
+        .from('news_redrops')
+        .select()
+        .eq('article_link', articleLink)
+        .eq('user_id', user.id)
+        .maybeSingle();
+  }
+
+  /// Redrops a story, or updates the requote text if this user already
+  /// redropped it — upsert on the (user_id, article_link) unique
+  /// constraint from v16-migration.sql, same toggle-not-stack idea as
+  /// a retweet button.
+  Future<void> addOrUpdateNewsRedrop({
+    required String articleLink,
+    required String articleTitle,
+    String? quote,
+  }) async {
+    final user = currentUser;
+    if (user == null) throw Exception('Must be signed in to redrop.');
+    await _client.from('news_redrops').upsert(
+      {
+        'user_id': user.id,
+        'article_link': articleLink,
+        'article_title': articleTitle,
+        'quote': quote,
+      },
+      onConflict: 'user_id,article_link',
+    );
+  }
+
+  Future<void> removeNewsRedrop(String articleLink) async {
+    final user = currentUser;
+    if (user == null) return;
+    await _client
+        .from('news_redrops')
+        .delete()
+        .eq('article_link', articleLink)
+        .eq('user_id', user.id);
+  }
+
   Future<ProfileStats?> fetchProfileStats(String userId) async {
     final row = await _client
         .from('profile_stats')

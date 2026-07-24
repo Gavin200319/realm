@@ -9,6 +9,8 @@ import '../services/generated_image_service.dart';
 import '../theme/rm_theme.dart';
 import '../widgets/news_card.dart';
 import 'news_comments_sheet.dart';
+import 'news_detail_screen.dart';
+import 'news_redrop_sheet.dart';
 
 /// The "Updates" side of the Realm tab's Drops/Updates toggle — real
 /// news, syndicated from Kenyan outlets first (general + entertainment),
@@ -76,10 +78,16 @@ class UpdatesViewState extends State<UpdatesView> {
     }
   }
 
-  Future<void> _openStory(NewsArticle article) async {
+  Future<void> _openExternal(NewsArticle article) async {
     final uri = Uri.tryParse(article.link);
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _openDetail(NewsArticle article) {
+    return Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => NewsDetailScreen(article: article)),
+    );
   }
 
   Future<void> _openComments(NewsArticle article) {
@@ -88,6 +96,15 @@ class UpdatesViewState extends State<UpdatesView> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => NewsCommentsSheet(article: article),
+    );
+  }
+
+  Future<RedropOutcome?> _openRedropSheet(NewsArticle article) {
+    return showModalBottomSheet<RedropOutcome>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => NewsRedropSheet(article: article),
     );
   }
 
@@ -159,8 +176,10 @@ class UpdatesViewState extends State<UpdatesView> {
           return _NewsCardWithCount(
             key: ValueKey(article.id),
             article: article,
-            onOpenStory: () => _openStory(article),
+            onOpenDetail: () => _openDetail(article),
+            onOpenExternal: () => _openExternal(article),
             onOpenComments: () => _openComments(article),
+            onOpenRedropSheet: () => _openRedropSheet(article),
           );
         },
       ),
@@ -173,14 +192,18 @@ class UpdatesViewState extends State<UpdatesView> {
 /// name — cheap, best-effort, and never blocks the card from showing.
 class _NewsCardWithCount extends StatefulWidget {
   final NewsArticle article;
-  final VoidCallback onOpenStory;
+  final VoidCallback onOpenDetail;
+  final VoidCallback onOpenExternal;
   final Future<void> Function() onOpenComments;
+  final Future<RedropOutcome?> Function() onOpenRedropSheet;
 
   const _NewsCardWithCount({
     super.key,
     required this.article,
-    required this.onOpenStory,
+    required this.onOpenDetail,
+    required this.onOpenExternal,
     required this.onOpenComments,
+    required this.onOpenRedropSheet,
   });
 
   @override
@@ -189,12 +212,15 @@ class _NewsCardWithCount extends StatefulWidget {
 
 class _NewsCardWithCountState extends State<_NewsCardWithCount> {
   int? _count;
+  int? _redropCount;
+  bool _iRedropped = false;
   NewsArticle? _resolvedArticle;
 
   @override
   void initState() {
     super.initState();
     _loadCount();
+    _loadRedropState();
     _resolveImageIfMissing();
   }
 
@@ -214,6 +240,22 @@ class _NewsCardWithCountState extends State<_NewsCardWithCount> {
       if (mounted) setState(() => _count = count);
     } catch (_) {
       // Best-effort — the count pill just stays generic without it.
+    }
+  }
+
+  Future<void> _loadRedropState() async {
+    try {
+      final results = await Future.wait([
+        SupabaseService.instance.fetchNewsRedropCount(widget.article.link),
+        SupabaseService.instance.fetchMyNewsRedrop(widget.article.link),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _redropCount = results[0] as int;
+        _iRedropped = (results[1] as Map<String, dynamic>?) != null;
+      });
+    } catch (_) {
+      // Best-effort, same contract as _loadCount above.
     }
   }
 
@@ -257,18 +299,35 @@ class _NewsCardWithCountState extends State<_NewsCardWithCount> {
     }
   }
 
+  Future<void> _handleRedrop() async {
+    final outcome = await widget.onOpenRedropSheet();
+    if (outcome == null || !mounted) return;
+    if (outcome == RedropOutcome.sharedToStatus) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Shared to your status')));
+    } else {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Redropped')));
+    }
+    _loadRedropState();
+  }
+
   @override
   Widget build(BuildContext context) {
     return NewsCard(
       article: _resolvedArticle ?? widget.article,
       commentCount: _count,
-      onOpenStory: widget.onOpenStory,
+      redropCount: _redropCount,
+      iRedropped: _iRedropped,
+      onOpenDetail: widget.onOpenDetail,
+      onOpenExternal: widget.onOpenExternal,
       onOpenComments: () async {
         // Refresh the count once the sheet actually closes, in case
         // the person just added a comment.
         await widget.onOpenComments();
         _loadCount();
       },
+      onRedrop: _handleRedrop,
     );
   }
 }

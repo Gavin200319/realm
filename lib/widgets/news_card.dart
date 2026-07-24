@@ -5,21 +5,32 @@ import '../theme/rm_theme.dart';
 
 /// The Updates-tab counterpart to [DropCard] — same rounded surface,
 /// same border/spacing rhythm, so switching between Drops and Updates
-/// doesn't feel like landing in a different app. Tapping the card (or
-/// the "View full story" link) opens the source article; tapping the
-/// comment pill opens this app's own comment thread on the story.
+/// doesn't feel like landing in a different app. Tapping the card
+/// opens this app's own detail view (summary + comments + engagement)
+/// rather than jumping straight out to the publisher; the "View full
+/// story" link is the explicit way out to the original article.
+/// Tapping the comment pill opens the comment thread directly, and
+/// the redrop pill opens the redrop/share-to-status composer.
 class NewsCard extends StatelessWidget {
   final NewsArticle article;
   final int? commentCount;
-  final VoidCallback onOpenStory;
+  final int? redropCount;
+  final bool iRedropped;
+  final VoidCallback onOpenDetail;
+  final VoidCallback onOpenExternal;
   final VoidCallback onOpenComments;
+  final VoidCallback onRedrop;
 
   const NewsCard({
     super.key,
     required this.article,
-    required this.onOpenStory,
+    required this.onOpenDetail,
+    required this.onOpenExternal,
     required this.onOpenComments,
+    required this.onRedrop,
     this.commentCount,
+    this.redropCount,
+    this.iRedropped = false,
   });
 
   Color get _tierColor {
@@ -47,7 +58,7 @@ class NewsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onOpenStory,
+      onTap: onOpenDetail,
       child: Container(
         decoration: BoxDecoration(
           color: RMColors.surface,
@@ -251,18 +262,20 @@ class NewsCard extends StatelessWidget {
 
             Divider(height: 1, color: RMColors.border),
 
-            // ── Actions: view full story / comments ──────────────
+            // ── Actions: view full story / redrop / comments ──────
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: Row(
                 children: [
                   Expanded(
                     child: TextButton.icon(
-                      onPressed: onOpenStory,
+                      onPressed: onOpenExternal,
                       icon: Icon(Icons.open_in_new_rounded,
                           size: 16, color: RMColors.primary),
                       label: Text(
                         'View full story',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                             color: RMColors.primary,
                             fontWeight: FontWeight.w600,
@@ -271,7 +284,30 @@ class NewsCard extends StatelessWidget {
                     ),
                   ),
                   TextButton.icon(
+                    onPressed: onRedrop,
+                    style: TextButton.styleFrom(
+                        padding: EdgeInsets.symmetric(horizontal: 8)),
+                    icon: Icon(Icons.repeat_rounded,
+                        size: 16,
+                        color: iRedropped
+                            ? RMColors.success
+                            : RMColors.textSecondary),
+                    label: Text(
+                      redropCount == null || redropCount == 0
+                          ? 'Redrop'
+                          : '$redropCount',
+                      style: TextStyle(
+                          color: iRedropped
+                              ? RMColors.success
+                              : RMColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13),
+                    ),
+                  ),
+                  TextButton.icon(
                     onPressed: onOpenComments,
+                    style: TextButton.styleFrom(
+                        padding: EdgeInsets.symmetric(horizontal: 8)),
                     icon: Icon(Icons.mode_comment_outlined,
                         size: 16, color: RMColors.textSecondary),
                     label: Text(
